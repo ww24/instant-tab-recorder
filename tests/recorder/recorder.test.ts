@@ -474,6 +474,69 @@ describe('RecordingSession', () => {
             const durationMs = await session.cancel()
             expect(durationMs).toBe(0)
         })
+
+        test('throws when main output cancel fails', async () => {
+            const config = createDefaultConfig()
+            await session.start(defaultRequest, config)
+
+            const mockOutput = (outputManager as unknown as { _mockOutput: ReturnType<typeof createMockOutput> })
+                ._mockOutput
+            const cancelError = new Error('Main output cancel failed')
+            ;(mockOutput.cancel as Mock).mockRejectedValue(cancelError)
+
+            let caughtError: unknown
+            try {
+                await session.cancel()
+            } catch (e) {
+                caughtError = e
+            }
+
+            expect(caughtError).toBeDefined()
+            expect((caughtError as Error).message).toContain('Main output cancel error')
+            expect(session.state).toBe('idle')
+        })
+
+        test('throws when audio separation cancel fails', async () => {
+            const config = createDefaultConfig({ audioSeparation: { enabled: true } })
+            await session.start(defaultRequest, config)
+
+            const separationError = new Error('Audio separation cancel failed')
+            ;(audioSeparation.cancelAll as Mock).mockRejectedValue(separationError)
+
+            let caughtError: unknown
+            try {
+                await session.cancel()
+            } catch (e) {
+                caughtError = e
+            }
+
+            expect(caughtError).toBeDefined()
+            expect((caughtError as Error).message).toContain('Audio separation cancel error')
+            expect(session.state).toBe('idle')
+        })
+
+        test('throws AggregateError when both main output and audio separation cancel fail', async () => {
+            const config = createDefaultConfig({ audioSeparation: { enabled: true } })
+            await session.start(defaultRequest, config)
+
+            const mockOutput = (outputManager as unknown as { _mockOutput: ReturnType<typeof createMockOutput> })
+                ._mockOutput
+            const mainError = new Error('Main output cancel failed')
+            const sepError = new Error('Audio separation cancel failed')
+            ;(mockOutput.cancel as Mock).mockRejectedValue(mainError)
+            ;(audioSeparation.cancelAll as Mock).mockRejectedValue(sepError)
+
+            let caughtError: unknown
+            try {
+                await session.cancel()
+            } catch (e) {
+                caughtError = e
+            }
+
+            expect(caughtError).toBeInstanceOf(AggregateError)
+            expect((caughtError as AggregateError).errors).toHaveLength(2)
+            expect(session.state).toBe('idle')
+        })
     })
 
     describe('pause and resume', () => {

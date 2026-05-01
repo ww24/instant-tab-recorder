@@ -42,17 +42,17 @@ export interface RecorderCallbacks {
 
 export class RecordingSession implements OffscreenSession {
     private _state: RecorderState = 'idle'
-    private mainOutput: Output | undefined
-    private separationOutputs: AudioSeparationOutputs | undefined
+    private mainOutput?: Output
+    private separationOutputs?: AudioSeparationOutputs
     private allSources: PausableSource[] = []
     private mediaTracks: MediaStreamTrack[] = []
     private recordingStartTime = 0
     private totalPausedMs = 0
     private pausedAtMs = 0
-    private recordingFileHandle: FileSystemFileHandle | undefined
+    private recordingFileHandle?: FileSystemFileHandle
     private mainFileName = ''
     private mainMimeType = ''
-    private tickTimerId: ReturnType<typeof setInterval> | undefined
+    private tickTimerId?: ReturnType<typeof setInterval>
     private currentVideoTrack: MediaStreamTrack | null = null
 
     constructor(
@@ -265,16 +265,27 @@ export class RecordingSession implements OffscreenSession {
         console.warn('cancel recording...')
         try {
             this.preview.stop()
-            await this.mainOutput?.cancel()
-
-            // Cancel sub outputs (errors don't affect main recording)
-            if (this.separationOutputs) {
-                await this.audioSeparation.cancelAll(this.separationOutputs).catch(e => {
-                    console.error('Audio separation cancel error:', e)
-                    sendException(e, { exceptionSource: 'recorder.audioSeparationCancel' })
-                })
+            const promises: Array<Promise<void>> = []
+            if (this.mainOutput) {
+                promises.push(
+                    this.mainOutput.cancel().catch(cause => {
+                        throw new Error('Main output cancel error', { cause })
+                    }),
+                )
             }
-
+            if (this.separationOutputs) {
+                promises.push(
+                    this.audioSeparation.cancelAll(this.separationOutputs).catch(cause => {
+                        throw new Error('Audio separation cancel error', { cause })
+                    }),
+                )
+            }
+            const failures = (await Promise.allSettled(promises))
+                .filter(result => result.status === 'rejected')
+                .map(result => result.reason)
+            if (failures.length === 1) throw failures[0]
+            if (failures.length > 1)
+                throw new AggregateError(failures, 'Multiple recorder cancellation operations failed')
             return this.recordingStartTime > 0 ? Date.now() - this.recordingStartTime : 0
         } finally {
             this.cleanup()
