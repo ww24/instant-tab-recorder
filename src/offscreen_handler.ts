@@ -187,20 +187,20 @@ export class OffscreenHandler {
     }
 
     private async handleCancelRecording(): Promise<void> {
+        let durationSec = 0
         try {
-            const durationMs = await this.deps.session.cancel()
-            this.deps.sendEvent({
-                type: 'unexpected_stop',
-                metrics: {
-                    recording: {
-                        durationSec: durationMs / 1000,
-                    },
-                },
-            })
+            durationSec = (await this.deps.session.cancel()) / 1000
         } catch (e) {
             console.error(e)
             this.deps.sendException(e, { exceptionSource: 'offscreen.cancelRecording' })
         } finally {
+            this.deps.sendEvent({
+                type: 'unexpected_stop',
+                metrics: {
+                    recording: { durationSec },
+                },
+            })
+
             // Mark the IndexedDB record for cancelled recording as canceled
             if (this.currentRecordingStartAtMs != null) {
                 try {
