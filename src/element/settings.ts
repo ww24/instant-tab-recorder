@@ -98,6 +98,9 @@ export class Settings extends LitElement {
         md-filled-select {
             margin-bottom: 1em;
         }
+        .recording-scale-input {
+            width: 140px;
+        }
         .video-format-input {
             width: 280px;
         }
@@ -220,6 +223,7 @@ export class Settings extends LitElement {
                 .value=${live(this.config.screenRecordingSize.height)}
                 @change=${this.updateProp('screenRecordingSize', 'height')}></md-filled-text-field>
             <md-filled-text-field
+                class="recording-scale-input"
                 label=${t('settingsRecordingScale')}
                 type="number"
                 min="1"

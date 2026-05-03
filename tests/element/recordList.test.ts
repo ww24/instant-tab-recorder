@@ -6,6 +6,7 @@ import { getChromeMock, getMessageListenersCount, simulateChromeMessage } from '
 import '../../src/element/recordList'
 import '../../src/element/alert'
 import type { RecordingMetadata } from '../../src/storage'
+import { MdCheckbox } from '@material/web/checkbox/checkbox'
 
 // Mock the api_client module used by RecordList
 const listRecordingsMock = vi.fn().mockResolvedValue([])
@@ -101,6 +102,117 @@ describe('record-list', () => {
 
         const list = shadowQuery(el, 'md-list')
         expect(list).not.toBeNull()
+    })
+
+    test('renders thumbnail image for completed recordings', async () => {
+        const ts = '1000000000000'
+        listRecordingsMock.mockResolvedValue([
+            {
+                title: `video-${ts}.webm`,
+                path: `video-${ts}.webm`,
+                size: 1024,
+                lastModified: Date.now(),
+                mimeType: 'video/webm',
+                recordedAt: Number(ts),
+                isRecording: false,
+                isTemporary: false,
+                subFiles: [],
+                subFilesSize: 0,
+                thumbnailFileName: `video-${ts}-thumbnail.webp`,
+            },
+        ])
+
+        const screen = render(html`<record-list></record-list>`)
+        const el = screen.container.querySelector('record-list')!
+        await elementUpdated(el)
+
+        await vi.waitFor(() => {
+            const img = shadowQuery(el, '.thumbnail-container img') as HTMLImageElement | null
+            expect(img).not.toBeNull()
+            expect(img?.src).toContain(`/api/recordings/video-${ts}-thumbnail.webp`)
+            expect(img?.loading).toBe('lazy')
+        })
+    })
+
+    test('keeps thumbnail placeholder after image error across re-renders', async () => {
+        const ts = '1000000000001'
+        listRecordingsMock.mockResolvedValue([
+            {
+                title: `video-${ts}.webm`,
+                path: `video-${ts}.webm`,
+                size: 1024,
+                lastModified: Date.now(),
+                mimeType: 'video/webm',
+                recordedAt: Number(ts),
+                isRecording: false,
+                isTemporary: false,
+                subFiles: [],
+                subFilesSize: 0,
+                thumbnailFileName: `video-${ts}-thumbnail.webp`,
+            },
+        ])
+
+        const screen = render(html`<record-list></record-list>`)
+        const el = screen.container.querySelector('record-list')!
+        await elementUpdated(el)
+
+        await vi.waitFor(() => {
+            const img = shadowQuery(el, '.thumbnail-container img') as HTMLImageElement | null
+            expect(img).not.toBeNull()
+        })
+
+        const img = shadowQuery(el, '.thumbnail-container img') as HTMLImageElement
+        img.dispatchEvent(new Event('error'))
+        await elementUpdated(el)
+
+        await vi.waitFor(() => {
+            const placeholder = shadowQuery(el, '.thumbnail-container .thumbnail-placeholder')
+            expect(placeholder).not.toBeNull()
+            expect(shadowQuery(el, '.thumbnail-container img')).toBeNull()
+        })
+
+        const checkbox = shadowQuery(el, 'md-checkbox') as MdCheckbox
+        checkbox.checked = true
+        checkbox.dispatchEvent(new Event('input', { bubbles: true, composed: true }))
+        await elementUpdated(el)
+
+        const placeholderAfterRerender = shadowQuery(el, '.thumbnail-container .thumbnail-placeholder')
+        expect(placeholderAfterRerender).not.toBeNull()
+        expect(shadowQuery(el, '.thumbnail-container img')).toBeNull()
+    })
+
+    test('renders recording indicator instead of thumbnail for recording-in-progress entries', async () => {
+        const ts = Date.now()
+        listRecordingsMock.mockResolvedValue([
+            {
+                title: `video-${ts}.webm`,
+                path: `video-${ts}.webm`,
+                size: 0,
+                lastModified: Date.now(),
+                mimeType: 'video/webm',
+                recordedAt: ts,
+                isRecording: true,
+                isTemporary: false,
+                subFiles: [],
+                subFilesSize: 0,
+            },
+        ])
+
+        const screen = render(html`<record-list></record-list>`)
+        const el = screen.container.querySelector('record-list')!
+        await elementUpdated(el)
+
+        await vi.waitFor(() => {
+            const listItem = shadowQuery(el, '.list-item')
+            expect(listItem).not.toBeNull()
+        })
+
+        const img = shadowQuery(el, '.thumbnail-container img')
+        expect(img).toBeNull()
+
+        const recording = shadowQuery(el, '.thumbnail-recording')
+        expect(recording).not.toBeNull()
+        expect(recording?.textContent).toBe('Recording')
     })
 
     test('connectedCallback registers chrome.runtime.onMessage listener', async () => {

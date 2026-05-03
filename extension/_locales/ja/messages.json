@@ -394,6 +394,12 @@
     "recordListRecording": {
         "message": "録画中"
     },
+    "recordListThumbnailRecording": {
+        "message": "録画中"
+    },
+    "recordListThumbnailUnavailable": {
+        "message": "サムネイルなし"
+    },
     "recordListPaused": {
         "message": "一時停止"
     },

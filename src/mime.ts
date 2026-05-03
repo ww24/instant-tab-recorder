@@ -7,6 +7,7 @@ const extensionToMimeType: Record<string, string> = {
     '.ogg': 'audio/ogg',
     '.aac': 'audio/aac',
     '.flac': 'audio/flac',
+    '.webp': 'image/webp',
 }
 
 /**

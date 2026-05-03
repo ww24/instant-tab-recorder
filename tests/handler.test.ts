@@ -72,6 +72,13 @@ describe('parseApiPath', () => {
     it('should return null for names with encoded backslash', () => {
         expect(parseApiPath('/api/recordings/foo%5Cbar.webm')).toBeNull()
     })
+
+    it('should parse /api/recordings/video-{ts}-thumbnail.webp as recording route', () => {
+        expect(parseApiPath('/api/recordings/video-1000-thumbnail.webp')).toEqual({
+            route: 'recording',
+            name: 'video-1000-thumbnail.webp',
+        })
+    })
 })
 
 // ---------- handleApiRequest – storage-estimate ----------
@@ -189,6 +196,44 @@ describe('handleApiRequest – recordings-list', () => {
         const body = await res.json()
         const recordingEntry = body.find((r: { title: string }) => r.title === 'video-3.webm')
         expect(recordingEntry.size).toBe(500)
+    })
+
+    it('should include thumbnailFileName only when thumbnail exists', async () => {
+        const withThumbnail: RecordingRecord = {
+            recordedAt: 1000,
+            mainFilePath: 'video-1000.webm',
+            mimeType: 'video/webm',
+            title: 'video-1000.webm',
+            status: 'completed',
+            durationMs: 5000,
+            fileSize: 100,
+            subFiles: [],
+            thumbnail: new Blob(['thumb'], { type: 'image/webp' }),
+        }
+        const withoutThumbnail: RecordingRecord = {
+            recordedAt: 1001,
+            mainFilePath: 'video-1001.webm',
+            mimeType: 'video/webm',
+            title: 'video-1001.webm',
+            status: 'completed',
+            durationMs: 5000,
+            fileSize: 100,
+            subFiles: [],
+            thumbnail: null,
+        }
+        const recordingDB = createMockRecordingDB({
+            list: vi.fn().mockResolvedValue([withThumbnail, withoutThumbnail]),
+        })
+        const storage = createMockStorage()
+        const req = new Request('https://ext.example/api/recordings')
+        const res = await handleApiRequest(req, storage, { isRecording: false }, recordingDB)
+
+        expect(res.status).toBe(200)
+        const body = await res.json()
+        const first = body.find((r: { recordedAt: number }) => r.recordedAt === 1000)
+        const second = body.find((r: { recordedAt: number }) => r.recordedAt === 1001)
+        expect(first.thumbnailFileName).toBe('video-1000-thumbnail.webp')
+        expect(second.thumbnailFileName).toBeUndefined()
     })
 
     it('should pass sort=desc parameter', async () => {
@@ -758,5 +803,82 @@ describe('handleApiRequest – internal error', () => {
 
         expect(res.status).toBe(500)
         expect(await res.json()).toEqual({ error: 'Internal Server Error' })
+    })
+})
+
+// ---------- handleApiRequest – recording-thumbnail ----------
+
+describe('handleApiRequest – recording-thumbnail', () => {
+    it('should return thumbnail blob with correct content type', async () => {
+        const thumbnailBlob = new Blob(['fake-webp'], { type: 'image/webp' })
+        const record: RecordingRecord = {
+            recordedAt: 1000,
+            mainFilePath: 'video-1000.webm',
+            mimeType: 'video/webm',
+            title: 'video-1000.webm',
+            status: 'completed',
+            durationMs: 5000,
+            fileSize: 100,
+            subFiles: [],
+            thumbnail: thumbnailBlob,
+        }
+        const recordingDB = createMockRecordingDB({
+            get: vi.fn().mockResolvedValue(record),
+        })
+        const storage = createMockStorage()
+        const req = new Request('https://ext.example/api/recordings/video-1000-thumbnail.webp')
+        const recordingState: RecordingState = { isRecording: false, startAtMs: 0 }
+        const res = await handleApiRequest(req, storage, recordingState, recordingDB)
+
+        expect(res.status).toBe(200)
+        expect(res.headers.get('Content-Type')).toBe('image/webp')
+        const body = await res.text()
+        expect(body).toBe('fake-webp')
+    })
+
+    it('should return 404 when record has no thumbnail', async () => {
+        const record: RecordingRecord = {
+            recordedAt: 1000,
+            mainFilePath: 'video-1000.webm',
+            mimeType: 'video/webm',
+            title: 'video-1000.webm',
+            status: 'completed',
+            durationMs: 5000,
+            fileSize: 100,
+            subFiles: [],
+        }
+        const recordingDB = createMockRecordingDB({
+            get: vi.fn().mockResolvedValue(record),
+        })
+        const storage = createMockStorage()
+        const req = new Request('https://ext.example/api/recordings/video-1000-thumbnail.webp')
+        const recordingState: RecordingState = { isRecording: false, startAtMs: 0 }
+        const res = await handleApiRequest(req, storage, recordingState, recordingDB)
+
+        expect(res.status).toBe(404)
+    })
+
+    it('should return 404 when record not found', async () => {
+        const recordingDB = createMockRecordingDB({
+            get: vi.fn().mockResolvedValue(undefined),
+        })
+        const storage = createMockStorage()
+        const req = new Request('https://ext.example/api/recordings/video-1000-thumbnail.webp')
+        const recordingState: RecordingState = { isRecording: false, startAtMs: 0 }
+        const res = await handleApiRequest(req, storage, recordingState, recordingDB)
+
+        expect(res.status).toBe(404)
+    })
+
+    it('should return 405 for non-GET methods', async () => {
+        const recordingDB = createMockRecordingDB()
+        const storage = createMockStorage()
+        const req = new Request('https://ext.example/api/recordings/video-1000-thumbnail.webp', {
+            method: 'DELETE',
+        })
+        const recordingState: RecordingState = { isRecording: false, startAtMs: 0 }
+        const res = await handleApiRequest(req, storage, recordingState, recordingDB)
+
+        expect(res.status).toBe(405)
     })
 })

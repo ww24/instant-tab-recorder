@@ -7,6 +7,11 @@ vi.mock('@mediabunny/flac-encoder', () => ({
     registerFlacEncoder: vi.fn(),
 }))
 
+const generateThumbnailMock = vi.fn().mockResolvedValue(null)
+vi.mock('../src/thumbnail', () => ({
+    generateThumbnail: (...args: unknown[]) => generateThumbnailMock(...args),
+}))
+
 import { OffscreenHandler } from '../src/offscreen_handler'
 import type { OffscreenDeps, OffscreenSession } from '../src/offscreen_handler'
 import type { Message, StartRecordingResponse } from '../src/message'
@@ -60,6 +65,7 @@ function createMockRecordingDB(): RecordingDB {
 
 function createMockDeps(overrides: Partial<OffscreenDeps> = {}): OffscreenDeps {
     const defaultConfig = new Configuration()
+    const defaultVideoFile = new File(['video-data'], 'video-1000.webm', { type: 'video/webm' })
     return {
         getRecordingInfo: vi.fn().mockReturnValue({
             videoFormat: defaultConfig.videoFormat,
@@ -76,6 +82,7 @@ function createMockDeps(overrides: Partial<OffscreenDeps> = {}): OffscreenDeps {
         getLocationHash: vi.fn().mockReturnValue(''),
         setLocationHash: vi.fn(),
         recordingDB: createMockRecordingDB(),
+        getVideoFile: vi.fn().mockResolvedValue(defaultVideoFile),
         ...overrides,
     }
 }
@@ -296,6 +303,10 @@ describe('start-recording', () => {
 // ---------- stop-recording ----------
 
 describe('stop-recording', () => {
+    beforeEach(() => {
+        generateThumbnailMock.mockReset().mockResolvedValue(null)
+    })
+
     it('calls session.stop and sends stop_recording event with metrics', async () => {
         const deps = createMockDeps()
         const handler = new OffscreenHandler(deps)
@@ -391,6 +402,48 @@ describe('stop-recording', () => {
         } finally {
             vi.useRealTimers()
         }
+    })
+
+    it('generates thumbnail and stores it in IndexedDB record', async () => {
+        const fakeVideoFile = new Blob(['video-data'], { type: 'video/webm' })
+        const fakeThumbnail = new Blob(['jpeg-data'], { type: 'image/jpeg' })
+        generateThumbnailMock.mockResolvedValue(fakeThumbnail)
+        const deps = createMockDeps({
+            getVideoFile: vi.fn().mockResolvedValue(fakeVideoFile),
+        })
+        const handler = new OffscreenHandler(deps)
+        await handler.handleMessage({ type: 'stop-recording', trigger: 'action-icon' })
+
+        expect(deps.getVideoFile).toHaveBeenCalledWith('video-1000.webm')
+        expect(generateThumbnailMock).toHaveBeenCalledWith(fakeVideoFile)
+        expect(deps.recordingDB.put).toHaveBeenCalledWith(expect.objectContaining({ thumbnail: fakeThumbnail }))
+    })
+
+    it('stores null thumbnail and sends exception when getVideoFile throws', async () => {
+        const error = new Error('OPFS read failed')
+        const deps = createMockDeps({
+            getVideoFile: vi.fn().mockRejectedValue(error),
+        })
+        const handler = new OffscreenHandler(deps)
+        await handler.handleMessage({ type: 'stop-recording', trigger: 'action-icon' })
+
+        expect(generateThumbnailMock).not.toHaveBeenCalled()
+        expect(deps.sendException).toHaveBeenCalledWith(error, {
+            exceptionSource: 'offscreen.stopRecording.thumbnail',
+        })
+        expect(deps.recordingDB.put).toHaveBeenCalledWith(expect.objectContaining({ thumbnail: null }))
+    })
+
+    it('stores null thumbnail when generateThumbnail returns null', async () => {
+        const fakeVideoFile = new Blob(['video-data'], { type: 'video/webm' })
+        generateThumbnailMock.mockResolvedValue(null)
+        const deps = createMockDeps({
+            getVideoFile: vi.fn().mockResolvedValue(fakeVideoFile),
+        })
+        const handler = new OffscreenHandler(deps)
+        await handler.handleMessage({ type: 'stop-recording', trigger: 'action-icon' })
+
+        expect(deps.recordingDB.put).toHaveBeenCalledWith(expect.objectContaining({ thumbnail: null }))
     })
 })
 

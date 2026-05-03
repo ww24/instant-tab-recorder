@@ -38,6 +38,7 @@ export interface RecordEntry {
     durationMs?: number | null
     subFiles: SubFileInfo[] // Related audio separation files from IndexedDB
     subFilesSize: number // Total size of sub-files in bytes
+    thumbnailFileName?: string
 }
 
 /**
@@ -86,6 +87,17 @@ export class RecordList extends LitElement {
         .list-item {
             font-variant-numeric: tabular-nums;
         }
+        .start-slot {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        .list-item md-checkbox {
+            margin: 0;
+        }
+        .recording-title {
+            height: 30px;
+        }
         .recording {
             color: var(--theme-recording, #d93025);
         }
@@ -119,6 +131,44 @@ export class RecordList extends LitElement {
         a {
             color: var(--theme-link, inherit);
         }
+        .item-content {
+            flex: 1;
+            min-width: 0;
+        }
+        .thumbnail-container {
+            width: 192px;
+            height: 108px;
+            border-radius: 4px;
+            flex-shrink: 0;
+            overflow: hidden;
+        }
+        .thumbnail-container img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+        .thumbnail-placeholder {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--theme-surface-variant, #dae5e3);
+            color: var(--theme-text-secondary, #3f4948);
+            font-size: 0.875rem;
+        }
+        .thumbnail-recording {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--theme-surface-variant, #dae5e3);
+            color: var(--theme-recording, #d93025);
+            font-size: 0.875rem;
+            font-weight: 500;
+        }
     `
 
     private static readonly dateTimeFormat = new Intl.DateTimeFormat(undefined, {
@@ -149,6 +199,9 @@ export class RecordList extends LitElement {
 
     @state()
     private timerStopText: string = ''
+
+    @state()
+    private failedThumbnailKeys: Set<string> = new Set()
 
     private recordingStartAtMs: number | null = null
     private recordingStopAtMs: number | null = null
@@ -234,75 +287,111 @@ export class RecordList extends LitElement {
         dialog?.show()
     }
 
+    private static getThumbnailKey(record: Pick<RecordEntry, 'path' | 'thumbnailFileName'>): string | null {
+        if (!record.thumbnailFileName) return null
+        return `${record.path}::${record.thumbnailFileName}`
+    }
+
+    private hasThumbnailLoadFailed(record: Pick<RecordEntry, 'path' | 'thumbnailFileName'>): boolean {
+        const key = RecordList.getThumbnailKey(record)
+        return key != null && this.failedThumbnailKeys.has(key)
+    }
+
+    private handleThumbnailError(record: Pick<RecordEntry, 'path' | 'thumbnailFileName'>) {
+        const key = RecordList.getThumbnailKey(record)
+        if (key == null || this.failedThumbnailKeys.has(key)) return
+        const next = new Set(this.failedThumbnailKeys)
+        next.add(key)
+        this.failedThumbnailKeys = next
+    }
+
     public override render() {
         const row = (record: RecordEntry, idx: number) => {
             const fileUrl = getRecordingFileUrl(record.path)
             const downloadUrl = `${fileUrl}?download=true`
             return html` ${idx > 0 ? html`<md-divider></md-divider>` : ''}
                 <md-list-item class="list-item">
-                    <md-checkbox
-                        touch-target="wrapper"
-                        slot="start"
-                        ?disabled=${record.isRecording}
-                        ?checked=${record.selected}
-                        @input=${this.selectRecord(record)}></md-checkbox>
-                    ${record.isRecording
-                        ? html`<span aria-disabled="true">${record.title}</span>`
-                        : html`<a href="${downloadUrl}">${record.title}</a>`}
-                    ${record.isRecording
-                        ? ''
-                        : record.subFiles.map(sub => {
-                              const subUrl = `${getRecordingFileUrl(sub.path)}?download=true`
-                              const label = sub.type === 'tab' ? t('recordListTabAudio') : t('recordListMicAudio')
-                              const icon = sub.type === 'tab' ? 'headphones' : 'mic'
-                              return html`<a
-                                  href="${subUrl}"
-                                  title="${label}"
-                                  aria-label="${t('recordListDownloadLabel', label)}"
-                                  class="sub-file-icon"
-                                  ><md-icon>${icon}</md-icon></a
-                              >`
-                          })}
-                    <div class="meta" title=${t('recordListTitleFileSize')}>
-                        <md-icon>storage</md-icon> ${formatFileSize(record.size + record.subFilesSize)}
-                        ${record.subFilesSize > 0
-                            ? html` <span class="separated-size" title=${t('recordListTitleSeparatedSize')}
-                                  >(${t('recordListSeparatedSize', formatFileSize(record.subFilesSize))})</span
-                              >`
+                    <div slot="start" class="start-slot">
+                        <md-checkbox
+                            touch-target="wrapper"
+                            ?disabled=${record.isRecording}
+                            ?checked=${record.selected}
+                            @input=${this.selectRecord(record)}></md-checkbox>
+                        <div class="thumbnail-container">
+                            ${record.isRecording
+                                ? html`<div class="thumbnail-recording">${t('recordListThumbnailRecording')}</div>`
+                                : record.thumbnailFileName && !this.hasThumbnailLoadFailed(record)
+                                  ? html`<img
+                                        src="${getRecordingFileUrl(record.thumbnailFileName)}"
+                                        alt=""
+                                        loading="lazy"
+                                        @error=${() => this.handleThumbnailError(record)} />`
+                                  : html`<div class="thumbnail-placeholder">
+                                        ${t('recordListThumbnailUnavailable')}
+                                    </div>`}
+                        </div>
+                    </div>
+                    <div class="recording-title" slot="headline">
+                        ${record.isRecording
+                            ? html`<span aria-disabled="true">${record.title}</span>`
+                            : html`<a href="${downloadUrl}">${record.title}</a>`}
+                        ${record.isRecording
+                            ? ''
+                            : record.subFiles.map(sub => {
+                                  const subUrl = `${getRecordingFileUrl(sub.path)}?download=true`
+                                  const label = sub.type === 'tab' ? t('recordListTabAudio') : t('recordListMicAudio')
+                                  const icon = sub.type === 'tab' ? 'headphones' : 'mic'
+                                  return html`<a
+                                      href="${subUrl}"
+                                      title="${label}"
+                                      aria-label="${t('recordListDownloadLabel', label)}"
+                                      class="sub-file-icon"
+                                      ><md-icon>${icon}</md-icon></a
+                                  >`
+                              })}
+                    </div>
+                    <div class="item-content" slot="supporting-text">
+                        <div class="meta" title=${t('recordListTitleFileSize')}>
+                            <md-icon>storage</md-icon> ${formatFileSize(record.size + record.subFilesSize)}
+                            ${record.subFilesSize > 0
+                                ? html` <span class="separated-size" title=${t('recordListTitleSeparatedSize')}
+                                      >(${t('recordListSeparatedSize', formatFileSize(record.subFilesSize))})</span
+                                  >`
+                                : ''}
+                        </div>
+                        ${record.recordedAt != null
+                            ? html`<div class="meta" title=${t('recordListTitleRecordedAt')}>
+                                  <md-icon>schedule</md-icon>
+                                  ${RecordList.dateTimeFormat.format(record.recordedAt)}
+                              </div>`
+                            : ''}
+                        ${record.durationMs != null && !record.isRecording
+                            ? html`<div class="meta" title=${t('recordListTitleDuration')}>
+                                  <md-icon>timer</md-icon> ${formatElapsedTime(record.durationMs)}
+                              </div>`
+                            : ''}
+                        ${record.isRecording
+                            ? html`<div class="meta recording" title=${t('recordListTitleRecording')}>
+                                  <md-icon>screen_record</md-icon>
+                                  ${this.recordingPaused ? t('recordListPaused') : t('recordListRecording')}
+                                  <span class="elapsed-time${this.recordingPaused ? ' elapsed-blink' : ''}"
+                                      >${this.elapsedTimeText}</span
+                                  >${this.timerStopText
+                                      ? html` <span title=${t('recordListTitleTimerStop')}
+                                            >(⏱
+                                            ${this.recordingPaused
+                                                ? t('recordListTimerPaused')
+                                                : t('recordListTimerStopsAt', this.timerStopText)})</span
+                                        >`
+                                      : ''}
+                              </div>`
+                            : ''}
+                        ${record.isCanceled
+                            ? html`<div class="meta canceled" title=${t('recordListTitleCanceled')}>
+                                  <md-icon>cancel</md-icon> ${t('recordListCanceled')}
+                              </div>`
                             : ''}
                     </div>
-                    ${record.recordedAt != null
-                        ? html`<div class="meta" title=${t('recordListTitleRecordedAt')}>
-                              <md-icon>schedule</md-icon> ${RecordList.dateTimeFormat.format(record.recordedAt)}
-                          </div>`
-                        : ''}
-                    ${record.durationMs != null && !record.isRecording
-                        ? html`<div class="meta" title=${t('recordListTitleDuration')}>
-                              <md-icon>timer</md-icon> ${formatElapsedTime(record.durationMs)}
-                          </div>`
-                        : ''}
-                    ${record.isRecording
-                        ? html`<div class="meta recording" title=${t('recordListTitleRecording')}>
-                              <md-icon>screen_record</md-icon> ${this.recordingPaused
-                                  ? t('recordListPaused')
-                                  : t('recordListRecording')}
-                              <span class="elapsed-time${this.recordingPaused ? ' elapsed-blink' : ''}"
-                                  >${this.elapsedTimeText}</span
-                              >${this.timerStopText
-                                  ? html` <span title=${t('recordListTitleTimerStop')}
-                                        >(⏱
-                                        ${this.recordingPaused
-                                            ? t('recordListTimerPaused')
-                                            : t('recordListTimerStopsAt', this.timerStopText)})</span
-                                    >`
-                                  : ''}
-                          </div>`
-                        : ''}
-                    ${record.isCanceled
-                        ? html`<div class="meta canceled" title=${t('recordListTitleCanceled')}>
-                              <md-icon>cancel</md-icon> ${t('recordListCanceled')}
-                          </div>`
-                        : ''}
                     <md-filled-icon-button slot="end" ?disabled=${record.isRecording} @click=${this.playRecord(record)}>
                         <md-icon>play_arrow</md-icon>
                     </md-filled-icon-button>
@@ -363,10 +452,20 @@ export class RecordList extends LitElement {
             durationMs: meta.durationMs,
             subFiles: meta.subFiles ?? [],
             subFilesSize: meta.subFilesSize ?? 0,
+            thumbnailFileName: meta.thumbnailFileName,
         }))
 
         const oldVal = [...this.records]
         this.records = result
+        const validThumbnailKeys = new Set(
+            result.map(r => RecordList.getThumbnailKey(r)).filter((key): key is string => key != null),
+        )
+        if (this.failedThumbnailKeys.size > 0) {
+            const retainedFailedKeys = new Set([...this.failedThumbnailKeys].filter(key => validThumbnailKeys.has(key)))
+            if (retainedFailedKeys.size !== this.failedThumbnailKeys.size) {
+                this.failedThumbnailKeys = retainedFailedKeys
+            }
+        }
         this.requestUpdate('records', oldVal)
     }
 
