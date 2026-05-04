@@ -11,6 +11,7 @@ import type {
 import type { RecordingConfig, RecordingResult } from './recorder'
 import type { Event, ExceptionMetadata } from './sentry_event'
 import type { RecordingDB, RecordingRecord } from './recording_db'
+import { generateThumbnail } from './thumbnail'
 
 // ---------- dependency interfaces ----------
 
@@ -40,6 +41,7 @@ export interface OffscreenDeps {
     getLocationHash(): string
     setLocationHash(hash: string): void
     recordingDB: RecordingDB
+    getVideoFile(path: string): Promise<File>
 }
 
 // ---------- handler ----------
@@ -147,6 +149,16 @@ export class OffscreenHandler {
         try {
             const result = await this.deps.session.stop()
             if (result) {
+                // Generate thumbnail from the recorded video (non-fatal)
+                let thumbnail: Blob | null = null
+                try {
+                    const videoFile = await this.deps.getVideoFile(result.mainFilePath)
+                    thumbnail = await generateThumbnail(videoFile)
+                } catch (e) {
+                    console.error('Failed to generate thumbnail:', e)
+                    this.deps.sendException(e, { exceptionSource: 'offscreen.stopRecording.thumbnail' })
+                }
+
                 // Update IndexedDB record with final metadata
                 try {
                     const record: RecordingRecord = {
@@ -158,6 +170,7 @@ export class OffscreenHandler {
                         durationMs: result.durationMs,
                         fileSize: result.fileSize,
                         subFiles: result.subFiles,
+                        thumbnail,
                     }
                     await this.deps.recordingDB.put(record)
                 } catch (e) {

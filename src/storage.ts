@@ -23,6 +23,8 @@ export interface RecordingMetadata {
     status?: 'recording' | 'completed' | 'canceled'
     subFiles?: SubFileInfo[]
     subFilesSize?: number
+    /** Thumbnail file name for API fetch, present only when thumbnail exists (e.g. "video-1234-thumbnail.webp") */
+    thumbnailFileName?: string
 }
 
 /**

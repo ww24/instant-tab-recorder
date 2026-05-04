@@ -46,6 +46,7 @@ function injectThemeStyles() {
 html[data-theme="light"] {
     --theme-bg: #f8f9fa;
     --theme-surface: #ffffff;
+    --theme-surface-variant: #e8e8f0;
     --theme-text: #1a1a2e;
     --theme-text-secondary: #5a5a7a;
     --theme-border: #e0e0e8;
@@ -78,6 +79,7 @@ html[data-theme="light"] {
 html[data-theme="dark"] {
     --theme-bg: #121218;
     --theme-surface: #1e1e2a;
+    --theme-surface-variant: #28283a;
     --theme-text: #e8e8f0;
     --theme-text-secondary: #a0a0b8;
     --theme-border: #2e2e40;

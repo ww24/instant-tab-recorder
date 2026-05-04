@@ -33,6 +33,16 @@ export default defineConfig(({ mode }) => ({
             output: {
                 entryFileNames: '[name].js',
                 chunkFileNames: '[name]-[hash].js',
+                codeSplitting: {
+                    minSize: 20000,
+                    groups: [
+                        {
+                            name: 'vendor-mediabunny',
+                            test: /node_modules[\\/]@mediabunny/,
+                            priority: 10,
+                        },
+                    ],
+                },
             },
         },
         sourcemap: !!process.env.SOURCEMAP,

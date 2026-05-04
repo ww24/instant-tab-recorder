@@ -67,6 +67,11 @@ const handler = new OffscreenHandler({
         window.location.hash = hash
     },
     recordingDB,
+    getVideoFile: async (path: string) => {
+        const dirHandle = await navigator.storage.getDirectory()
+        const fileHandle = await dirHandle.getFileHandle(path)
+        return await fileHandle.getFile()
+    },
 })
 
 chrome.runtime.onMessage.addListener(

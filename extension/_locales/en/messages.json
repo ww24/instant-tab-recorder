@@ -527,6 +527,14 @@
         "message": "Recording",
         "description": "Status label for active recording"
     },
+    "recordListThumbnailRecording": {
+        "message": "Recording",
+        "description": "Label shown in thumbnail area while recording"
+    },
+    "recordListThumbnailUnavailable": {
+        "message": "No Thumbnail",
+        "description": "Label shown in thumbnail area when thumbnail is unavailable"
+    },
     "recordListPaused": {
         "message": "Paused",
         "description": "Status label for paused recording"

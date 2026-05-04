@@ -79,6 +79,34 @@ describe('RecordingDB (real IndexedDB)', () => {
         )
     })
 
+    it('stores and retrieves thumbnail blob', async () => {
+        const thumbnailBlob = new Blob(['fake-jpeg'], { type: 'image/jpeg' })
+        const record = makeRecord({ recordedAt: 3000, thumbnail: thumbnailBlob })
+        await db.put(record)
+
+        const result = await db.get(3000)
+        expect(result?.thumbnail).toBeInstanceOf(Blob)
+        expect(result?.thumbnail?.type).toBe('image/jpeg')
+        const text = await result!.thumbnail!.text()
+        expect(text).toBe('fake-jpeg')
+    })
+
+    it('stores record with null thumbnail', async () => {
+        const record = makeRecord({ recordedAt: 4000, thumbnail: null })
+        await db.put(record)
+
+        const result = await db.get(4000)
+        expect(result?.thumbnail).toBeNull()
+    })
+
+    it('returns undefined thumbnail for legacy records without thumbnail', async () => {
+        const record = makeRecord({ recordedAt: 5000 })
+        await db.put(record)
+
+        const result = await db.get(5000)
+        expect(result?.thumbnail).toBeUndefined()
+    })
+
     // ---- list ----
 
     it('list returns empty array when DB is empty', async () => {

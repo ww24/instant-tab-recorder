@@ -43,6 +43,8 @@ export interface RecordingRecord {
     fileSize: number
     /** Sub-files (tab audio, mic audio) */
     subFiles: SubFileInfo[]
+    /** WebP thumbnail blob, null when generation failed, undefined for legacy records */
+    thumbnail?: Blob | null
 }
 
 function openDB(): Promise<IDBDatabase> {

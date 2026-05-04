@@ -92,7 +92,8 @@ export interface RecordingState {
  * Supports:
  * - GET  /api/storage/estimate              - Storage quota info
  * - GET  /api/recordings                    - List recordings (from IndexedDB)
- * - GET  /api/recordings/:name              - Download recording (with Range Request support)
+ * - GET  /api/recordings/:name                    - Download recording (with Range Request support)
+ * - GET  /api/recordings/video-{ts}-thumbnail.webp - Get recording thumbnail (served as WebP)
  * - DELETE /api/recordings/:name            - Delete recording (cascade: IndexedDB + OPFS)
  */
 export async function handleApiRequest(
@@ -169,6 +170,7 @@ export async function handleApiRequest(
 
                         const subFilesSize = r.subFiles.reduce((sum, sf) => sum + sf.fileSize, 0)
 
+                        const thumbnailFileName = r.thumbnail ? `video-${r.recordedAt}-thumbnail.webp` : undefined
                         return {
                             title: r.title || r.mainFilePath,
                             path: r.mainFilePath,
@@ -182,6 +184,7 @@ export async function handleApiRequest(
                             status,
                             subFiles: r.subFiles,
                             subFilesSize,
+                            ...(thumbnailFileName ? { thumbnailFileName } : {}),
                         }
                     }),
                 )
@@ -199,6 +202,30 @@ export async function handleApiRequest(
 
             case 'recording': {
                 const name = parsed.name!
+                const mimeType = getMimeTypeFromExtension(name)
+
+                // Thumbnail files are read-only: video-{timestamp}-thumbnail.webp
+                const thumbnailMatch = name.match(/^video-([0-9]+)-thumbnail\.webp$/)
+                if (thumbnailMatch) {
+                    if (request.method !== 'GET') {
+                        return new Response(JSON.stringify({ error: 'Method Not Allowed' }), {
+                            status: 405,
+                            headers: { 'Content-Type': 'application/json' },
+                        })
+                    }
+                    const thumbRecordedAt = Number.parseInt(thumbnailMatch[1], 10)
+                    const thumbRecord = await recordingDB.get(thumbRecordedAt)
+                    if (!thumbRecord?.thumbnail) {
+                        return new Response(JSON.stringify({ error: 'Not Found' }), {
+                            status: 404,
+                            headers: { 'Content-Type': 'application/json' },
+                        })
+                    }
+                    return new Response(thumbRecord.thumbnail, {
+                        status: 200,
+                        headers: { 'Content-Type': mimeType },
+                    })
+                }
 
                 if (request.method === 'DELETE') {
                     // Look up IndexedDB record by timestamp for cascade delete
@@ -261,7 +288,6 @@ export async function handleApiRequest(
                         headers: { 'Content-Type': 'application/json' },
                     })
                 }
-                const mimeType = getMimeTypeFromExtension(name)
                 const headers: Record<string, string> = {
                     'Content-Type': mimeType,
                     'Accept-Ranges': 'bytes',
