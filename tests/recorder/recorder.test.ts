@@ -87,8 +87,8 @@ function createMockOutputManager(): OutputManager {
             sources: [],
             errorPromises: [],
         })),
-        _mockOutput: mockOutput,
-    } as unknown as OutputManager & { _mockOutput: ReturnType<typeof createMockOutput> }
+        testMockOutput: mockOutput,
+    } as unknown as OutputManager & { testMockOutput: ReturnType<typeof createMockOutput> }
 }
 
 function createMockAudioSeparation(): AudioSeparationManager {
@@ -375,8 +375,8 @@ describe('RecordingSession', () => {
             await session.start(defaultRequest, config)
 
             // Patch output state to 'started'
-            const mockOutput = (outputManager as unknown as { _mockOutput: ReturnType<typeof createMockOutput> })
-                ._mockOutput
+            const mockOutput = (outputManager as unknown as { testMockOutput: ReturnType<typeof createMockOutput> })
+                .testMockOutput
             mockOutput.state = 'started'
 
             const result = await session.stop()
@@ -391,8 +391,8 @@ describe('RecordingSession', () => {
             const config = createDefaultConfig()
             await session.start(defaultRequest, config)
 
-            const mockOutput = (outputManager as unknown as { _mockOutput: ReturnType<typeof createMockOutput> })
-                ._mockOutput
+            const mockOutput = (outputManager as unknown as { testMockOutput: ReturnType<typeof createMockOutput> })
+                .testMockOutput
             mockOutput.state = 'started'
 
             await session.stop()
@@ -403,8 +403,8 @@ describe('RecordingSession', () => {
             const config = createDefaultConfig({ audioSeparation: { enabled: true } })
             await session.start(defaultRequest, config)
 
-            const mockOutput = (outputManager as unknown as { _mockOutput: ReturnType<typeof createMockOutput> })
-                ._mockOutput
+            const mockOutput = (outputManager as unknown as { testMockOutput: ReturnType<typeof createMockOutput> })
+                .testMockOutput
             mockOutput.state = 'started'
 
             await session.stop()
@@ -429,8 +429,8 @@ describe('RecordingSession', () => {
             const config = createDefaultConfig()
             await session.start(defaultRequest, config)
 
-            const mockOutput = (outputManager as unknown as { _mockOutput: ReturnType<typeof createMockOutput> })
-                ._mockOutput
+            const mockOutput = (outputManager as unknown as { testMockOutput: ReturnType<typeof createMockOutput> })
+                .testMockOutput
             mockOutput.state = 'started'
 
             await session.stop()
@@ -479,8 +479,8 @@ describe('RecordingSession', () => {
             const config = createDefaultConfig()
             await session.start(defaultRequest, config)
 
-            const mockOutput = (outputManager as unknown as { _mockOutput: ReturnType<typeof createMockOutput> })
-                ._mockOutput
+            const mockOutput = (outputManager as unknown as { testMockOutput: ReturnType<typeof createMockOutput> })
+                .testMockOutput
             const cancelError = new Error('Main output cancel failed')
             ;(mockOutput.cancel as Mock).mockRejectedValue(cancelError)
 
@@ -519,8 +519,8 @@ describe('RecordingSession', () => {
             const config = createDefaultConfig({ audioSeparation: { enabled: true } })
             await session.start(defaultRequest, config)
 
-            const mockOutput = (outputManager as unknown as { _mockOutput: ReturnType<typeof createMockOutput> })
-                ._mockOutput
+            const mockOutput = (outputManager as unknown as { testMockOutput: ReturnType<typeof createMockOutput> })
+                .testMockOutput
             const mainError = new Error('Main output cancel failed')
             const sepError = new Error('Audio separation cancel failed')
             ;(mockOutput.cancel as Mock).mockRejectedValue(mainError)
@@ -585,8 +585,8 @@ describe('RecordingSession', () => {
                 createOutput: vi.fn(() => createMockOutput()),
                 addTracks: vi.fn(() => ({ sources: [mockSource], errorPromises: [] })),
                 createAudioTrackOutput: vi.fn(() => ({ output: createMockOutput(), sources: [], errorPromises: [] })),
-                _mockOutput: createMockOutput(),
-            } as unknown as OutputManager & { _mockOutput: ReturnType<typeof createMockOutput> }
+                testMockOutput: createMockOutput(),
+            } as unknown as OutputManager & { testMockOutput: ReturnType<typeof createMockOutput> }
 
             const s = new RecordingSession(
                 mediaCapture,
@@ -611,8 +611,8 @@ describe('RecordingSession', () => {
                 createOutput: vi.fn(() => createMockOutput()),
                 addTracks: vi.fn(() => ({ sources: [mockSource], errorPromises: [] })),
                 createAudioTrackOutput: vi.fn(() => ({ output: createMockOutput(), sources: [], errorPromises: [] })),
-                _mockOutput: createMockOutput(),
-            } as unknown as OutputManager & { _mockOutput: ReturnType<typeof createMockOutput> }
+                testMockOutput: createMockOutput(),
+            } as unknown as OutputManager & { testMockOutput: ReturnType<typeof createMockOutput> }
 
             const s = new RecordingSession(
                 mediaCapture,
@@ -639,8 +639,8 @@ describe('RecordingSession', () => {
                 createOutput: vi.fn(() => mockOutput),
                 addTracks: vi.fn(() => ({ sources: [mockSource], errorPromises: [] })),
                 createAudioTrackOutput: vi.fn(() => ({ output: createMockOutput(), sources: [], errorPromises: [] })),
-                _mockOutput: mockOutput,
-            } as unknown as OutputManager & { _mockOutput: ReturnType<typeof createMockOutput> }
+                testMockOutput: mockOutput,
+            } as unknown as OutputManager & { testMockOutput: ReturnType<typeof createMockOutput> }
 
             const s = new RecordingSession(
                 mediaCapture,
@@ -667,8 +667,8 @@ describe('RecordingSession', () => {
             const config = createDefaultConfig()
             await session.start(defaultRequest, config)
 
-            const mockOutput = (outputManager as unknown as { _mockOutput: ReturnType<typeof createMockOutput> })
-                ._mockOutput
+            const mockOutput = (outputManager as unknown as { testMockOutput: ReturnType<typeof createMockOutput> })
+                .testMockOutput
             mockOutput.state = 'started'
 
             // Advance 10 seconds, pause, advance 5 seconds, resume, advance 10 seconds
