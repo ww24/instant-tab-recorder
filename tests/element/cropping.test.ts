@@ -21,7 +21,7 @@ describe('extension-cropping', () => {
         const el = screen.container.querySelector('extension-cropping')!
         await elementUpdated(el)
 
-        const switchEl = shadowQuery(el, '.switch-row md-switch')
+        const switchEl = shadowQuery(el, '.switch-label md-switch')
         expect(switchEl).not.toBeNull()
 
         const label = shadowQuery(el, '.switch-label')
