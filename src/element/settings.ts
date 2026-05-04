@@ -41,6 +41,7 @@ import Alert from './alert'
 import { applyTheme } from '../theme'
 import { t } from '../i18n'
 import { switchLabelStyle } from './switchStyle'
+import { registerFlacEncoder } from '@mediabunny/flac-encoder'
 
 @customElement('extension-settings')
 export class Settings extends LitElement {
@@ -182,6 +183,14 @@ export class Settings extends LitElement {
     }
 
     protected override async firstUpdated() {
+        try {
+            const isFLACSupported = await canEncodeAudio('flac')
+            if (!isFLACSupported) {
+                registerFlacEncoder()
+            }
+        } catch (error) {
+            console.error('Failed to initialize FLAC encoding support.', error)
+        }
         await this.validateEncoding()
     }
 

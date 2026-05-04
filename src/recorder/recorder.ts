@@ -1,4 +1,4 @@
-import type { Output } from 'mediabunny'
+import { canEncodeAudio, type Output } from 'mediabunny'
 import type { VideoFormat, CropRegion } from '../configuration'
 import { hasVideo, hasAudio } from '../configuration'
 import type { StartRecording, StartRecordingResponse } from '../message'
@@ -13,6 +13,7 @@ import type { FileManager } from './file_manager'
 import type { SubFileInfo } from '../recording_db'
 import { sendException } from '../sentry'
 import type { OffscreenSession } from '../offscreen_handler'
+import { registerFlacEncoder } from '@mediabunny/flac-encoder'
 
 export type RecorderState = 'idle' | 'starting' | 'recording' | 'paused'
 
@@ -79,6 +80,10 @@ export class RecordingSession implements OffscreenSession {
         try {
             const startAtMs = Date.now()
             const { videoFormat, recordingSize, microphone, cropping, muteRecordingTab, audioSeparation } = config
+
+            if (config.videoFormat.audioCodec === 'flac' && !(await canEncodeAudio('flac'))) {
+                registerFlacEncoder()
+            }
 
             // Prepare output file
             const fileHandle = await this.fileManager.createRecordingFile(startAtMs, videoFormat.container)

@@ -7,22 +7,8 @@ import {
     QUALITY_HIGH,
     QUALITY_MEDIUM,
     QUALITY_LOW,
-    canEncodeAudio,
 } from 'mediabunny'
-import { registerFlacEncoder } from '@mediabunny/flac-encoder'
 import type { OutputFormat, Quality } from 'mediabunny'
-
-const isServiceWorker = typeof ServiceWorkerGlobalScope !== 'undefined' && self instanceof ServiceWorkerGlobalScope
-if (!isServiceWorker) {
-    // Register encoder polyfills if browser doesn't natively support them
-    canEncodeAudio('flac')
-        .then(supported => {
-            if (!supported) registerFlacEncoder()
-        })
-        .catch(e => {
-            console.error('failed to register flac encoder:', e)
-        })
-}
 
 export interface Resolution {
     width: number
