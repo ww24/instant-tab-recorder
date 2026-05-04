@@ -53,9 +53,9 @@ interface MockMediaStreamDestination {
 }
 
 function createMockAudioContext(): AudioContext & {
-    _dest: MockMediaStreamDestination
-    _gains: Array<{ gain: { value: number }; connect: Mock }>
-    _sources: Array<{ connect: Mock }>
+    mockDest: MockMediaStreamDestination
+    mockGains: Array<{ gain: { value: number }; connect: Mock }>
+    mockSources: Array<{ connect: Mock }>
 } {
     const destTracks = [createMockTrack('audio', 'dest-audio')]
     const destStream = createMockStream(destTracks)
@@ -65,9 +65,9 @@ function createMockAudioContext(): AudioContext & {
     const sources: Array<{ connect: Mock }> = []
 
     return {
-        _dest: dest,
-        _gains: gains,
-        _sources: sources,
+        mockDest: dest,
+        mockGains: gains,
+        mockSources: sources,
         destination: {} as AudioDestinationNode,
         createMediaStreamDestination: vi.fn(() => dest),
         createMediaStreamSource: vi.fn(() => {
@@ -81,9 +81,9 @@ function createMockAudioContext(): AudioContext & {
             return gain
         }),
     } as unknown as AudioContext & {
-        _dest: MockMediaStreamDestination
-        _gains: Array<{ gain: { value: number }; connect: Mock }>
-        _sources: Array<{ connect: Mock }>
+        mockDest: MockMediaStreamDestination
+        mockGains: Array<{ gain: { value: number }; connect: Mock }>
+        mockSources: Array<{ connect: Mock }>
     }
 }
 
@@ -155,9 +155,9 @@ describe('AudioMixer', () => {
 
             // Should create gain node for mic
             expect(ctx.createGain).toHaveBeenCalled()
-            expect(ctx._gains[0].gain.value).toBe(0.5)
+            expect(ctx.mockGains[0].gain.value).toBe(0.5)
             // Tab audio source connected
-            expect(ctx._sources.length).toBeGreaterThanOrEqual(2)
+            expect(ctx.mockSources.length).toBeGreaterThanOrEqual(2)
             // Result is a new MediaStream
             expect(result).not.toBe(tabStream)
         })
@@ -192,7 +192,7 @@ describe('AudioMixer', () => {
             firstTrack.dispatchEvent(new Event('ended'))
 
             // dest audio tracks should have been stopped
-            const destTracks = ctx._dest.stream.getAudioTracks()
+            const destTracks = ctx.mockDest.stream.getAudioTracks()
             destTracks.forEach(t => expect(t.stop).toHaveBeenCalled())
         })
 
@@ -210,7 +210,7 @@ describe('AudioMixer', () => {
             const firstTrack = tabStream.getTracks()[0]
             firstTrack.dispatchEvent(new Event('ended'))
 
-            const destTracks = ctx._dest.stream.getAudioTracks()
+            const destTracks = ctx.mockDest.stream.getAudioTracks()
             destTracks.forEach(t => expect(t.stop).toHaveBeenCalled())
         })
     })
@@ -224,7 +224,7 @@ describe('AudioMixer', () => {
             mixer.setupPlayback(tabMedia, 44100)
 
             expect(ctx.createMediaStreamSource).toHaveBeenCalledWith(tabMedia)
-            expect(ctx._sources[0].connect).toHaveBeenCalledWith(ctx.destination)
+            expect(ctx.mockSources[0].connect).toHaveBeenCalledWith(ctx.destination)
         })
     })
 })

@@ -17,45 +17,40 @@ import './croppingPreview'
 import { CropRegionChangeEvent } from './croppingPreview'
 import { roundToEven, clampCoordinate, clampDimension } from './util'
 import { t } from '../i18n'
+import { switchLabelStyle } from './switchStyle'
 
 @customElement('extension-cropping')
 export class Cropping extends LitElement {
-    static override readonly styles = css`
-        :host {
-            display: block;
-        }
-        .switch-row {
-            display: flex;
-            align-items: center;
-            gap: 16px;
-            margin-bottom: 1em;
-        }
-        .switch-label {
-            font-size: 1.2em;
-        }
-        .message {
-            color: var(--theme-text-secondary, #666);
-            font-style: italic;
-            margin: 1em 0;
-        }
-        .message.warning {
-            color: var(--theme-error, #f44336);
-        }
-        .hint {
-            color: var(--theme-text-secondary, #666);
-            font-size: 0.9em;
-            margin: 0.5em 0 1em 0;
-        }
-        .region-inputs {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 16px;
-            max-width: 400px;
-        }
-        md-filled-text-field {
-            width: 100%;
-        }
-    `
+    static override readonly styles = [
+        switchLabelStyle,
+        css`
+            :host {
+                display: block;
+            }
+            .message {
+                color: var(--theme-text-secondary, #666);
+                font-style: italic;
+                margin: 1em 0;
+            }
+            .message.warning {
+                color: var(--theme-error, #f44336);
+            }
+            .hint {
+                color: var(--theme-text-secondary, #666);
+                font-size: 0.9em;
+                margin: 0.5em 0 1em 0;
+            }
+            .region-inputs {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 16px;
+                max-width: 400px;
+            }
+            md-filled-text-field {
+                width: 100%;
+            }
+        `,
+    ]
 
     @property({ type: Object })
     private config: Configuration
@@ -251,12 +246,14 @@ export class Cropping extends LitElement {
 
         return html`
             <h2>${t('croppingHeading')}</h2>
-            <div class="switch-row">
-                <label class="switch-label">${t('croppingEnable')}</label>
-                <md-switch
-                    ?selected=${enabled}
-                    ?disabled=${switchDisabled}
-                    @input=${this.updateCroppingEnabled}></md-switch>
+            <div>
+                <label class="switch-label">
+                    ${t('croppingEnable')}
+                    <md-switch
+                        ?selected=${enabled}
+                        ?disabled=${switchDisabled}
+                        @input=${this.updateCroppingEnabled}></md-switch>
+                </label>
             </div>
             ${this.renderMessages()}
 

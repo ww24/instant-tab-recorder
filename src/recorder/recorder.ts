@@ -41,7 +41,7 @@ export interface RecorderCallbacks {
 }
 
 export class RecordingSession implements OffscreenSession {
-    private _state: RecorderState = 'idle'
+    private currentState: RecorderState = 'idle'
     private mainOutput?: Output
     private separationOutputs?: AudioSeparationOutputs
     private allSources: PausableSource[] = []
@@ -67,14 +67,14 @@ export class RecordingSession implements OffscreenSession {
     ) {}
 
     get state(): RecorderState {
-        return this._state
+        return this.currentState
     }
 
     async start(request: StartRecording, config: RecordingConfig): Promise<StartRecordingResponse> {
-        if (this._state !== 'idle') {
+        if (this.currentState !== 'idle') {
             throw new Error('Called startRecording while recording is in progress.')
         }
-        this._state = 'starting'
+        this.currentState = 'starting'
 
         try {
             const startAtMs = Date.now()
@@ -185,7 +185,7 @@ export class RecordingSession implements OffscreenSession {
             })
 
             // Mark state
-            this._state = 'recording'
+            this.currentState = 'recording'
 
             // Start periodic tick
             this.tickTimerId = setInterval(async () => {
@@ -221,7 +221,7 @@ export class RecordingSession implements OffscreenSession {
         if (this.mainOutput.state !== 'started') return null
 
         // If paused, resume sources before finalizing so the encoder can flush
-        if (this._state === 'paused') {
+        if (this.currentState === 'paused') {
             this.totalPausedMs += Date.now() - this.pausedAtMs
             this.pausedAtMs = 0
             for (const source of this.allSources) source.resume()
@@ -293,26 +293,26 @@ export class RecordingSession implements OffscreenSession {
     }
 
     pause(): void {
-        if (this._state !== 'recording') {
-            throw new Error(`Cannot pause in state '${this._state}'`)
+        if (this.currentState !== 'recording') {
+            throw new Error(`Cannot pause in state '${this.currentState}'`)
         }
         this.pausedAtMs = Date.now()
         for (const source of this.allSources) source.pause()
-        this._state = 'paused'
+        this.currentState = 'paused'
     }
 
     resume(): void {
-        if (this._state !== 'paused') {
-            throw new Error(`Cannot resume in state '${this._state}'`)
+        if (this.currentState !== 'paused') {
+            throw new Error(`Cannot resume in state '${this.currentState}'`)
         }
         this.totalPausedMs += Date.now() - this.pausedAtMs
         this.pausedAtMs = 0
         for (const source of this.allSources) source.resume()
-        this._state = 'recording'
+        this.currentState = 'recording'
     }
 
     get isPaused(): boolean {
-        return this._state === 'paused'
+        return this.currentState === 'paused'
     }
 
     get elapsedPausedMs(): number {
@@ -348,6 +348,6 @@ export class RecordingSession implements OffscreenSession {
         this.mediaTracks.forEach(t => t.stop())
         this.mediaTracks = []
         this.currentVideoTrack = null
-        this._state = 'idle'
+        this.currentState = 'idle'
     }
 }

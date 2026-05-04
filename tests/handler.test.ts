@@ -1,4 +1,4 @@
-import { parseApiPath, handleApiRequest, _flushStalePersist } from '../src/handler'
+import { parseApiPath, handleApiRequest, flushStalePersist } from '../src/handler'
 import { RecordingState } from '../src/handler'
 import type { RecordingStorage } from '../src/storage'
 import type { RecordingDB, RecordingRecord } from '../src/recording_db'
@@ -280,7 +280,7 @@ describe('handleApiRequest – recordings-list', () => {
         const body = await res.json()
         expect(body[0].status).toBe('canceled')
         expect(body[0].isRecording).toBe(false)
-        await _flushStalePersist()
+        await flushStalePersist()
         expect(putMock).toHaveBeenCalledWith(expect.objectContaining({ recordedAt: 10, status: 'canceled' }))
     })
 
@@ -299,7 +299,7 @@ describe('handleApiRequest – recordings-list', () => {
         const recordingEntry = body.find((r: { path: string }) => r.path === 'video-3.webm')
         expect(recordingEntry.status).toBe('recording')
         expect(recordingEntry.isRecording).toBe(true)
-        await _flushStalePersist()
+        await flushStalePersist()
         expect(putMock).not.toHaveBeenCalled()
     })
 
@@ -350,7 +350,7 @@ describe('handleApiRequest – recordings-list', () => {
         expect(active.isRecording).toBe(true)
 
         // only stale record should have been persisted
-        await _flushStalePersist()
+        await flushStalePersist()
         expect(putMock).toHaveBeenCalledTimes(1)
         expect(putMock).toHaveBeenCalledWith(expect.objectContaining({ recordedAt: 5, status: 'canceled' }))
     })

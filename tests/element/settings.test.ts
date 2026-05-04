@@ -247,4 +247,27 @@ describe('extension-settings', () => {
         // timer stop confirm, open option page, mute recording tab
         expect(switches.length).toBeGreaterThanOrEqual(5)
     })
+
+    test('renders settings sections with grouped content', async () => {
+        const screen = render(html`<extension-settings></extension-settings>`)
+        const el = screen.container.querySelector('extension-settings')!
+        await elementUpdated(el)
+
+        const sections = shadowQueryAll(el, '.settings-section')
+        const groups = shadowQueryAll(el, '.settings-group')
+        expect(sections.length).toBeGreaterThan(0)
+        expect(groups.length).toBe(sections.length)
+        sections.forEach(section => {
+            expect(section.querySelectorAll('.settings-group').length).toBe(1)
+        })
+    })
+
+    test('uses switch-label class for switch layout', async () => {
+        const screen = render(html`<extension-settings></extension-settings>`)
+        const el = screen.container.querySelector('extension-settings')!
+        await elementUpdated(el)
+
+        const switchRows = shadowQueryAll(el, '.switch-label')
+        expect(switchRows.length).toBeGreaterThanOrEqual(7)
+    })
 })

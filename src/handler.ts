@@ -31,7 +31,7 @@ function persistStaleRecordFixes(recordingDB: RecordingDB, staleRecords: Recordi
 }
 
 /** Flush the in-flight stale-persist write (exposed for testing). */
-export function _flushStalePersist(): Promise<void> {
+export function flushStalePersist(): Promise<void> {
     return stalePersistPromise ?? Promise.resolve()
 }
 
