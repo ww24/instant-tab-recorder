@@ -42,7 +42,7 @@
     "@vitest/coverage-v8": "^4.1.2",
     "google-auth-library": "^10.6.2",
     "marked": "^18.0.2",
-    "oxfmt": "^0.46.0",
+    "oxfmt": "^0.47.0",
     "oxlint": "^1.61.0",
     "playwright": "^1.59.1",
     "typescript": "^6.0.3",
