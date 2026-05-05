@@ -15,7 +15,7 @@ import { t } from '../i18n'
 export default class Confirm extends LitElement {
     static override readonly styles = css`
         md-dialog {
-            width: 520px;
+            width: 600px;
             --md-dialog-container-color: var(--theme-dialog-bg, var(--md-sys-color-surface-container-high));
             --md-text-button-label-text-color: var(--theme-error, #f44336);
             --md-text-button-focus-label-text-color: var(--theme-error, #f44336);

@@ -8,8 +8,13 @@ import { t } from '../i18n'
 export default class Alert extends LitElement {
     static override readonly styles = css`
         md-dialog {
-            width: 520px;
+            width: 600px;
             --md-dialog-container-color: var(--theme-dialog-bg, var(--md-sys-color-surface-container-high));
+        }
+        pre {
+            overflow-x: scroll;
+            margin: 0;
+            font-size: 0.8rem;
         }
     `
 
@@ -18,6 +23,9 @@ export default class Alert extends LitElement {
 
     @property({ noAccessor: true })
     private content: string = ''
+
+    @property({ noAccessor: true })
+    private preformatted: boolean = false
 
     public constructor() {
         super()
@@ -28,7 +36,9 @@ export default class Alert extends LitElement {
             <md-dialog>
                 <div slot="headline">${this.headline}</div>
                 <form id="form" slot="content" method="dialog">
-                    ${this.content.split('\n').map(p => html`<p>${p}</p>`)}
+                    ${this.preformatted
+                        ? html`<pre>${this.content}</pre>`
+                        : this.content.split('\n').map(p => html`<p>${p}</p>`)}
                 </form>
                 <div slot="actions">
                     <md-text-button form="form" value="ok" autofocus>${t('alertOk')}</md-text-button>
@@ -37,13 +47,16 @@ export default class Alert extends LitElement {
         `
     }
 
-    public setContent(headline: string, content: string) {
+    public setContent(headline: string, content: string, options?: { preformatted?: boolean }) {
         const oldHeadline = this.headline
         this.headline = headline
         this.requestUpdate('headline', oldHeadline)
         const oldContent = this.content
         this.content = content
         this.requestUpdate('content', oldContent)
+        const oldPreformatted = this.preformatted
+        this.preformatted = options?.preformatted ?? false
+        this.requestUpdate('preformatted', oldPreformatted)
     }
 }
 
