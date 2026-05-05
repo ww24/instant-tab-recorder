@@ -47,8 +47,7 @@ export class OutputManager {
                 sources.push(videoSource)
                 errorPromises.push(
                     videoSource.errorPromise.catch(e => {
-                        console.error('Video source error:', e)
-                        throw e
+                        throw new Error('Video source error', { cause: e })
                     }),
                 )
             }
@@ -66,8 +65,7 @@ export class OutputManager {
                 sources.push(audioSource)
                 errorPromises.push(
                     audioSource.errorPromise.catch(e => {
-                        console.error('Audio source error:', e)
-                        throw e
+                        throw new Error('Audio source error', { cause: e })
                     }),
                 )
             }
@@ -96,7 +94,11 @@ export class OutputManager {
         return {
             output,
             sources: [audioSource],
-            errorPromises: [audioSource.errorPromise],
+            errorPromises: [
+                audioSource.errorPromise.catch(e => {
+                    throw new Error('Audio separation source error', { cause: e })
+                }),
+            ],
         }
     }
 }

@@ -12,7 +12,7 @@ export interface AudioSeparationOutputs {
     sources: PausableSource[]
     /** Cloned media tracks that must be stopped on cleanup */
     clonedTracks: MediaStreamTrack[]
-    /** Error promises from audio track sources (for logging, non-fatal) */
+    /** Error promises from audio track sources */
     errorPromises: Promise<void>[]
     /** File handles for retrieving sub-file info after finalize */
     tabFileHandle?: FileSystemFileHandle
