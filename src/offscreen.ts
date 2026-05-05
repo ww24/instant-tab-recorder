@@ -13,6 +13,7 @@ import { Crop } from './crop'
 import { createRecordingSession } from './recorder'
 import { OffscreenHandler } from './offscreen_handler'
 import { RecordingDB } from './recording_db'
+import { errorToString } from './error'
 
 const preview = new Preview(async ({ image, width, height }) => {
     const msg: PreviewFrameMessage = {
@@ -36,7 +37,7 @@ const session = createRecordingSession(preview, crop, {
     },
     onSourceError: async (e: Error) => {
         sendException(e, { exceptionSource: 'offscreen.startRecording' })
-        const msg: UnexpectedRecordingStateMessage = { type: 'unexpected-recording-state', error: e.message }
+        const msg: UnexpectedRecordingStateMessage = { type: 'unexpected-recording-state', error: errorToString(e) }
         try {
             await chrome.runtime.sendMessage(msg)
         } catch (sendErr) {
