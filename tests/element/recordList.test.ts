@@ -279,6 +279,80 @@ describe('record-list', () => {
         })
     })
 
+    test('uiLanguage defaults to en when @@ui_locale does not start with ja', async () => {
+        // The chrome mock returns '' for @@ui_locale (not in messages.json),
+        // so uiLanguage resolves to 'en'. Verify English plural rules are applied:
+        // In English, count=1 → singular, count≠1 → plural.
+        listRecordingsMock.mockResolvedValue([
+            {
+                title: 'video-1000000000000.webm',
+                size: 512,
+                lastModified: Date.now(),
+                mimeType: 'video/webm',
+                recordedAt: 1000000000000,
+                isTemporary: false,
+                subFiles: [],
+                subFilesSize: 0,
+            },
+        ])
+
+        const screen = render(html`<record-list></record-list>`)
+        const el = screen.container.querySelector('record-list')!
+        await elementUpdated(el)
+
+        // English pluralization: 1 → "1 Record" (singular)
+        await vi.waitFor(() => {
+            const heading = shadowQuery(el, '.storage-heading')
+            expect(heading?.textContent).toContain('1 Record')
+            expect(heading?.textContent).not.toContain('1 Records')
+        })
+    })
+
+    test('pluralRules uses English rules: "one" for 1, "other" for 0 and 2+', () => {
+        // Intl.PluralRules('en') should select 'one' for 1 and 'other' for anything else
+        const rules = new Intl.PluralRules('en')
+        expect(rules.select(0)).toBe('other')
+        expect(rules.select(1)).toBe('one')
+        expect(rules.select(2)).toBe('other')
+        expect(rules.select(10)).toBe('other')
+    })
+
+    test('formatRecordCount uses plural form for 0 records', async () => {
+        listRecordingsMock.mockResolvedValue([])
+
+        const screen = render(html`<record-list></record-list>`)
+        const el = screen.container.querySelector('record-list')!
+        await elementUpdated(el)
+
+        await vi.waitFor(() => {
+            const heading = shadowQuery(el, '.storage-heading')
+            expect(heading?.textContent).toContain('0 Records')
+        })
+    })
+
+    test('formatRecordCount uses plural form for multiple records', async () => {
+        const recordings = Array.from({ length: 3 }, (_, i) => ({
+            title: `video-${1000000000000 + i * 1000}.webm`,
+            size: 1024,
+            lastModified: Date.now(),
+            mimeType: 'video/webm',
+            recordedAt: 1000000000000 + i * 1000,
+            isTemporary: false,
+            subFiles: [],
+            subFilesSize: 0,
+        }))
+        listRecordingsMock.mockResolvedValue(recordings)
+
+        const screen = render(html`<record-list></record-list>`)
+        const el = screen.container.querySelector('record-list')!
+        await elementUpdated(el)
+
+        await vi.waitFor(() => {
+            const heading = shadowQuery(el, '.storage-heading')
+            expect(heading?.textContent).toContain('3 Records')
+        })
+    })
+
     test('storage heading shows sum of record sizes including subFilesSize', async () => {
         const ts1 = '1000000000000'
         const ts2 = '1000000001000'
