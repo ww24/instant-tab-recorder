@@ -180,7 +180,7 @@ export class RecordList extends LitElement {
         second: '2-digit',
     })
 
-    private static readonly uiLanguage = chrome?.i18n?.getMessage?.('@@ui_locale') || 'en'
+    private static readonly uiLanguage = chrome?.i18n?.getMessage?.('@@ui_locale')?.startsWith?.('ja') ? 'ja' : 'en'
     private static readonly pluralRules = new Intl.PluralRules(RecordList.uiLanguage)
     private static formatRecordCount(count: number): string {
         const category = RecordList.pluralRules.select(count)
