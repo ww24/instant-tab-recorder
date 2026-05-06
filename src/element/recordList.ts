@@ -282,7 +282,7 @@ export class RecordList extends LitElement {
     private static showRecordingError(error: string) {
         const alertDialog = document.getElementById('alert-dialog') as Alert | null
         if (alertDialog == null) return
-        alertDialog.setContent(t('recordListRecordingFailed'), error)
+        alertDialog.setContent(t('recordListRecordingFailed'), error, { preformatted: true })
         const dialog = alertDialog.shadowRoot?.querySelector('md-dialog') as MdDialog | null
         dialog?.show()
     }

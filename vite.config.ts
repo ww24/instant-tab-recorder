@@ -38,7 +38,12 @@ export default defineConfig(({ mode }) => ({
                     groups: [
                         {
                             name: 'vendor-mediabunny',
-                            test: /node_modules[\\/]@mediabunny/,
+                            test: /node_modules[\\/]mediabunny/,
+                            priority: 20,
+                        },
+                        {
+                            name: 'vendor-mediabunny-flac-encoder',
+                            test: /node_modules[\\/]@mediabunny[\\/]flac-encoder/,
                             priority: 10,
                         },
                     ],

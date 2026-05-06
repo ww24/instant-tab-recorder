@@ -142,36 +142,22 @@ export class RecordingSession implements OffscreenSession {
 
             // Audio separation
             if (audioSeparation.enabled) {
-                try {
-                    this.separationOutputs = await this.audioSeparation.createOutputs(
-                        startAtMs,
-                        tabMedia,
-                        micStream,
-                        videoFormat,
-                    )
-                    this.mediaTracks.push(...this.separationOutputs.clonedTracks)
-                    this.allSources.push(...this.separationOutputs.sources)
-                    // Report first separation error to Sentry (non-fatal)
-                    Promise.all(this.separationOutputs.errorPromises).catch(e => {
-                        console.error('Audio separation source error:', e)
-                        sendException(e, { exceptionSource: 'recorder.audioSeparationSource' })
-                    })
-                } catch (e) {
-                    console.error('Failed to create audio separation outputs:', e)
-                    sendException(e, { exceptionSource: 'recorder.createAudioSeparation' })
-                    // Non-fatal: continue without separation
-                }
+                this.separationOutputs = await this.audioSeparation.createOutputs(
+                    startAtMs,
+                    tabMedia,
+                    micStream,
+                    videoFormat,
+                )
+                this.mediaTracks.push(...this.separationOutputs.clonedTracks)
+                this.allSources.push(...this.separationOutputs.sources)
+                errorPromises.push(...this.separationOutputs.errorPromises)
             }
 
             // Handle media source errors
-            Promise.all(errorPromises)
-                .catch(async e => {
-                    await this.callbacks.onSourceError(e instanceof Error ? e : new Error(String(e)))
-                })
-                .catch(e => {
-                    console.error(e)
-                    sendException(e, { exceptionSource: 'recorder.sourceErrorCallback' })
-                })
+            Promise.all(errorPromises).catch(async e => {
+                console.error(e)
+                await this.callbacks.onSourceError(e instanceof Error ? e : new Error(String(e)))
+            })
 
             // Start outputs
             this.recordingStartTime = startAtMs

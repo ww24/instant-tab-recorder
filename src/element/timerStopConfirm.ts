@@ -17,7 +17,7 @@ import { t } from '../i18n'
 export default class TimerStopConfirm extends LitElement {
     static override readonly styles = css`
         md-dialog {
-            width: 520px;
+            width: 600px;
             --md-dialog-container-color: var(--theme-dialog-bg, var(--md-sys-color-surface-container-high));
         }
         .checkbox-row {
