@@ -3,6 +3,13 @@ import { ALL_FORMATS, BlobSource, Input, VideoSampleSink } from 'mediabunny'
 const DEFAULT_WIDTH = 480
 const QUALITY = 0.8
 
+export class NoVideoError extends Error {
+    constructor(message: string) {
+        super(message)
+        this.name = 'NoVideoError'
+    }
+}
+
 /**
  * Generate a WebP thumbnail from the first frame of a video blob.
  * Throws if thumbnail generation fails.
@@ -13,7 +20,7 @@ export async function generateThumbnail(videoBlob: Blob, options?: { width?: num
         source: new BlobSource(videoBlob),
     })
     const videoTrack = await input.getPrimaryVideoTrack()
-    if (!videoTrack) throw new Error('failed to get video track')
+    if (!videoTrack) throw new NoVideoError('failed to get video track')
 
     const firstTimestamp = await videoTrack.getFirstTimestamp()
     const sink = new VideoSampleSink(videoTrack)
