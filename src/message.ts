@@ -28,6 +28,7 @@ export type Message =
     | TimerUpdatedMessage
     | ConfirmTimerStopMessage
     | UpdateRecordingTimerMessage
+    | ClaimClientsMessage
 
 export interface ExceptionMessage {
     type: 'exception'
@@ -165,4 +166,9 @@ export interface UpdateRecordingTimerMessage {
     type: 'update-recording-timer'
     enabled: boolean
     durationMinutes: number
+}
+
+// Request service worker to claim clients (option page → service_worker)
+export interface ClaimClientsMessage {
+    type: 'claim-clients'
 }

@@ -16,6 +16,7 @@ export interface ServiceWorkerDeps {
     updateActionTitle: (state: RecordingState) => Promise<void>
     resizeWindow: (resolution: Resolution) => Promise<void>
     storageSyncSet: (key: string, value: object) => Promise<void>
+    claimClients: () => Promise<void>
 }
 
 export type HandleMessageResult = {
@@ -45,6 +46,8 @@ export function handleMessage(message: Message, deps: ServiceWorkerDeps): Handle
             return { response: handleFetchConfig(deps), fireAndForget: false }
         case 'request-recording-state':
             return { response: handleRequestRecordingState(deps), fireAndForget: true }
+        case 'claim-clients':
+            return { response: deps.claimClients(), fireAndForget: false }
     }
     return null
 }
