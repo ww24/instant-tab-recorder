@@ -53,6 +53,7 @@ export default defineConfig(({ mode }) => ({
         sourcemap: !!process.env.SOURCEMAP,
         minify: mode === 'production',
         target: 'chrome140',
+        license: { fileName: 'dependencies-licenses.md' },
     },
     define: {
         'process.env.PKG_NAME': JSON.stringify(pkg.name),
