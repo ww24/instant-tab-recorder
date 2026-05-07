@@ -23,7 +23,7 @@ vi.mock('mediabunny', () => {
     }
 })
 
-import { generateThumbnail } from '../src/thumbnail'
+import { generateThumbnail, NoVideoError } from '../src/thumbnail'
 
 function createFakeSample() {
     return {
@@ -96,7 +96,10 @@ describe('generateThumbnail', () => {
     it('throws when no video track found', async () => {
         mockGetPrimaryVideoTrack.mockResolvedValue(null)
 
-        await expect(generateThumbnail(new Blob())).rejects.toThrow('failed to get video track')
+        const error = await generateThumbnail(new Blob()).catch(e => e)
+
+        expect(error).toBeInstanceOf(NoVideoError)
+        expect(error).toHaveProperty('message', 'failed to get video track')
         expect(mockInputDispose).toHaveBeenCalled()
     })
 

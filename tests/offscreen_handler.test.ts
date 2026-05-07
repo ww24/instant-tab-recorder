@@ -8,12 +8,22 @@ vi.mock('@mediabunny/flac-encoder', () => ({
 }))
 
 const generateThumbnailMock = vi.fn().mockResolvedValue(null)
-vi.mock('../src/thumbnail', () => ({
-    generateThumbnail: (...args: unknown[]) => generateThumbnailMock(...args),
-}))
+vi.mock('../src/thumbnail', () => {
+    class NoVideoError extends Error {
+        constructor(message: string) {
+            super(message)
+            this.name = 'NoVideoError'
+        }
+    }
+    return {
+        generateThumbnail: (...args: unknown[]) => generateThumbnailMock(...args),
+        NoVideoError,
+    }
+})
 
 import { OffscreenHandler } from '../src/offscreen_handler'
 import type { OffscreenDeps, OffscreenSession } from '../src/offscreen_handler'
+import { NoVideoError } from '../src/thumbnail'
 import type { Message, StartRecordingResponse } from '../src/message'
 import { Configuration, VideoFormat } from '../src/configuration'
 import type { RecordingDB } from '../src/recording_db'
@@ -434,16 +444,23 @@ describe('stop-recording', () => {
         expect(deps.recordingDB.put).toHaveBeenCalledWith(expect.objectContaining({ thumbnail: null }))
     })
 
-    it('stores null thumbnail when generateThumbnail returns null', async () => {
-        const fakeVideoFile = new Blob(['video-data'], { type: 'video/webm' })
-        generateThumbnailMock.mockResolvedValue(null)
-        const deps = createMockDeps({
-            getVideoFile: vi.fn().mockResolvedValue(fakeVideoFile),
-        })
-        const handler = new OffscreenHandler(deps)
-        await handler.handleMessage({ type: 'stop-recording', trigger: 'action-icon' })
+    it('suppresses NoVideoError without sending exception or logging', async () => {
+        const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+        try {
+            const fakeVideoFile = new Blob(['video-data'], { type: 'video/webm' })
+            generateThumbnailMock.mockRejectedValue(new NoVideoError('failed to get video track'))
+            const deps = createMockDeps({
+                getVideoFile: vi.fn().mockResolvedValue(fakeVideoFile),
+            })
+            const handler = new OffscreenHandler(deps)
+            await handler.handleMessage({ type: 'stop-recording', trigger: 'action-icon' })
 
-        expect(deps.recordingDB.put).toHaveBeenCalledWith(expect.objectContaining({ thumbnail: null }))
+            expect(deps.sendException).not.toHaveBeenCalled()
+            expect(consoleErrorSpy).not.toHaveBeenCalled()
+            expect(deps.recordingDB.put).toHaveBeenCalledWith(expect.objectContaining({ thumbnail: null }))
+        } finally {
+            consoleErrorSpy.mockRestore()
+        }
     })
 })
 

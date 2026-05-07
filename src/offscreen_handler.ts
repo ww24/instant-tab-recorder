@@ -11,7 +11,7 @@ import type {
 import type { RecordingConfig, RecordingResult } from './recorder'
 import type { Event, ExceptionMetadata } from './sentry_event'
 import type { RecordingDB, RecordingRecord } from './recording_db'
-import { generateThumbnail } from './thumbnail'
+import { generateThumbnail, NoVideoError } from './thumbnail'
 
 // ---------- dependency interfaces ----------
 
@@ -155,8 +155,10 @@ export class OffscreenHandler {
                     const videoFile = await this.deps.getVideoFile(result.mainFilePath)
                     thumbnail = await generateThumbnail(videoFile)
                 } catch (e) {
-                    console.error('Failed to generate thumbnail:', e)
-                    this.deps.sendException(e, { exceptionSource: 'offscreen.stopRecording.thumbnail' })
+                    if (!(e instanceof NoVideoError)) {
+                        console.error('Failed to generate thumbnail:', e)
+                        this.deps.sendException(e, { exceptionSource: 'offscreen.stopRecording.thumbnail' })
+                    }
                 }
 
                 // Update IndexedDB record with final metadata
