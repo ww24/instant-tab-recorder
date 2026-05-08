@@ -461,6 +461,7 @@ const messageHandlerDeps: ServiceWorkerDeps = {
     updateActionTitle,
     resizeWindow,
     storageSyncSet: (key, value) => storage.set(key, value),
+    claimClients: () => self.clients.claim(),
 }
 
 chrome.runtime.onMessage.addListener(
@@ -524,4 +525,8 @@ self.addEventListener('fetch', (event: FetchEvent) => {
             })(),
         )
     }
+})
+
+self.addEventListener('activate', event => {
+    event.waitUntil(self.clients.claim())
 })

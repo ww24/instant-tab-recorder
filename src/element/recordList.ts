@@ -203,6 +203,9 @@ export class RecordList extends LitElement {
     @state()
     private failedThumbnailKeys: Set<string> = new Set()
 
+    @state()
+    private fetchError: boolean = false
+
     private recordingStartAtMs: number | null = null
     private recordingStopAtMs: number | null = null
     private recordingPaused: boolean = false
@@ -428,9 +431,13 @@ export class RecordList extends LitElement {
                 </md-assist-chip>
             </md-chip-set>
             <md-list>
-                ${this.records.length === 0
-                    ? html`<md-list-item>${t('recordListNoEntry')}</md-list-item>`
-                    : repeat(this.records, record => record.path, row)}
+                ${this.fetchError
+                    ? html`<md-list-item style="--md-list-item-label-text-color: var(--theme-error, #b00020)">
+                          ${t('recordListFetchError')}
+                      </md-list-item>`
+                    : this.records.length === 0
+                      ? html`<md-list-item>${t('recordListNoEntry')}</md-list-item>`
+                      : repeat(this.records, record => record.path, row)}
             </md-list>`
     }
 
@@ -438,8 +445,23 @@ export class RecordList extends LitElement {
         this.records = this.records.filter(r => r.path !== record.path)
     }
     private async updateRecord() {
-        // Fetch recordings from API (now backed by IndexedDB, sub-files already grouped)
-        const recordings = await recordingApi.listRecordings({ sort: this.sortOrder })
+        let recordings: Awaited<ReturnType<typeof recordingApi.listRecordings>>
+        try {
+            // Fetch recordings from API (now backed by IndexedDB, sub-files already grouped)
+            recordings = await recordingApi.listRecordings({ sort: this.sortOrder })
+        } catch (e) {
+            console.error('Failed to fetch recordings:', e)
+            sendException(e, { exceptionSource: 'option.recordList.updateRecord' })
+            const oldVal = [...this.records]
+            this.fetchError = true
+            this.records = []
+            if (this.failedThumbnailKeys.size > 0) {
+                this.failedThumbnailKeys = new Set()
+            }
+            this.requestUpdate('records', oldVal)
+            return
+        }
+        this.fetchError = false
 
         const result: Array<RecordEntry> = recordings.map(meta => ({
             title: meta.title,

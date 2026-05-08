@@ -26,6 +26,7 @@ function createMockDeps(overrides: Partial<ServiceWorkerDeps> = {}): ServiceWork
         updateActionTitle: vi.fn().mockResolvedValue(undefined),
         resizeWindow: vi.fn().mockResolvedValue(undefined),
         storageSyncSet: vi.fn().mockResolvedValue(undefined),
+        claimClients: vi.fn().mockResolvedValue(undefined),
         ...overrides,
     }
 }
@@ -207,6 +208,19 @@ describe('request-recording-state', () => {
         const result = handleMessage({ type: 'request-recording-state' }, deps)
         await result!.response
         expect(deps.broadcastRecordingState).toHaveBeenCalled()
+    })
+})
+
+// ---------- claim-clients ----------
+
+describe('claim-clients', () => {
+    it('calls claimClients and returns fireAndForget=false', async () => {
+        const deps = createMockDeps()
+        const result = handleMessage({ type: 'claim-clients' }, deps)
+        expect(result).not.toBeNull()
+        expect(result!.fireAndForget).toBe(false)
+        await result!.response
+        expect(deps.claimClients).toHaveBeenCalled()
     })
 })
 

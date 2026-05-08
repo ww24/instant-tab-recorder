@@ -591,3 +591,77 @@ describe('record-list', () => {
         }
     })
 })
+
+describe('record-list fetch error', () => {
+    beforeEach(() => {
+        listRecordingsMock.mockReset()
+    })
+
+    test('renders fetch error message when listRecordings rejects', async () => {
+        listRecordingsMock.mockRejectedValue(new Error('network error'))
+
+        const screen = render(html`<record-list></record-list>`)
+        const el = screen.container.querySelector('record-list')!
+        await elementUpdated(el)
+
+        await vi.waitFor(() => {
+            const listItem = shadowQuery(el, 'md-list md-list-item')
+            expect(listItem?.textContent?.trim()).toBe('Failed to load recordings. Please reload the page.')
+        })
+    })
+
+    test('does not show "no entry" when listRecordings rejects', async () => {
+        listRecordingsMock.mockRejectedValue(new Error('network error'))
+
+        const screen = render(html`<record-list></record-list>`)
+        const el = screen.container.querySelector('record-list')!
+        await elementUpdated(el)
+
+        await vi.waitFor(() => {
+            const listItem = shadowQuery(el, 'md-list md-list-item')
+            expect(listItem?.textContent?.trim()).not.toBe('no entry')
+        })
+    })
+
+    test('error message uses error color style', async () => {
+        listRecordingsMock.mockRejectedValue(new Error('network error'))
+
+        const screen = render(html`<record-list></record-list>`)
+        const el = screen.container.querySelector('record-list')!
+        await elementUpdated(el)
+
+        await vi.waitFor(() => {
+            const listItem = shadowQuery(el, 'md-list md-list-item') as HTMLElement | null
+            expect(listItem?.style.getPropertyValue('--md-list-item-label-text-color')).toBe(
+                'var(--theme-error, #b00020)',
+            )
+        })
+    })
+
+    test('recovers from fetch error when next update succeeds', async () => {
+        listRecordingsMock.mockRejectedValueOnce(new Error('network error'))
+
+        const screen = render(html`<record-list></record-list>`)
+        const el = screen.container.querySelector('record-list')!
+        await elementUpdated(el)
+
+        // Wait for error state
+        await vi.waitFor(() => {
+            const listItem = shadowQuery(el, 'md-list md-list-item')
+            expect(listItem?.textContent?.trim()).toBe('Failed to load recordings. Please reload the page.')
+        })
+
+        // Simulate successful recording-state message triggering updateRecord
+        listRecordingsMock.mockResolvedValue([])
+        simulateChromeMessage({
+            type: 'recording-state',
+            data: { isRecording: false },
+        })
+        await elementUpdated(el)
+
+        await vi.waitFor(() => {
+            const listItem = shadowQuery(el, 'md-list md-list-item')
+            expect(listItem?.textContent?.trim()).toBe('no entry')
+        })
+    })
+})

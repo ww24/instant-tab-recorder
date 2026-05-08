@@ -369,6 +369,9 @@
     "recordListNoEntry": {
         "message": "エントリなし"
     },
+    "recordListFetchError": {
+        "message": "録画一覧の取得に失敗しました。ページを再読み込みしてください。"
+    },
     "recordListTabAudio": {
         "message": "タブ音声"
     },
