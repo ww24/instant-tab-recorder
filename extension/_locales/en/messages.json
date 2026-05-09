@@ -593,6 +593,18 @@
         "message": "Recording Failed",
         "description": "Alert headline when recording fails"
     },
+    "supportLicenses": {
+        "message": "License Information",
+        "description": "Support section: License heading"
+    },
+    "supportOpenSourceLicenses": {
+        "message": "Open Source Licenses",
+        "description": "Button to view open source licenses"
+    },
+    "supportLicenseLoadError": {
+        "message": "Failed to load license information.",
+        "description": "Error message when license file cannot be loaded"
+    },
     "supportReview": {
         "message": "Review",
         "description": "Support section: Review heading"

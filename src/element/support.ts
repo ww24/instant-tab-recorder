@@ -140,6 +140,12 @@ export class Support extends LitElement {
         const isOverLimit = messageCharLength > MAX_MESSAGE_LENGTH
 
         return html`
+            <h2>${t('supportLicenses')}</h2>
+            <md-filled-tonal-button @click=${this.handleShowLicenses}>
+                ${t('supportOpenSourceLicenses')}
+                <md-icon slot="icon">description</md-icon>
+            </md-filled-tonal-button>
+
             <h2>${t('supportReview')}</h2>
             <div class="review-section">
                 <p>${t('supportReviewDescription')}</p>
@@ -275,6 +281,23 @@ export class Support extends LitElement {
 
     private handleReviewLink() {
         sendEvent({ type: 'click_external_link', tags: { link: 'review' } })
+    }
+
+    private async handleShowLicenses() {
+        const alertDialog = document.getElementById('alert-dialog') as Alert | null
+        if (!alertDialog) return
+
+        try {
+            const path = 'dist/dependencies-licenses.md'
+            const response = await fetch(path)
+            if (!response.ok) throw new Error(`failed to fetch ${path}: HTTP ${response.status}`)
+            const text = await response.text()
+            alertDialog.setContent(t('supportOpenSourceLicenses'), text, { preformatted: true })
+        } catch (e) {
+            alertDialog.setContent(t('alertDefaultHeadline'), t('supportLicenseLoadError'))
+            sendException(e, { exceptionSource: 'option.support.license' })
+        }
+        alertDialog.shadowRoot?.querySelector('md-dialog')?.show()
     }
 }
 

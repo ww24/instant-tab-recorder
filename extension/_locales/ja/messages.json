@@ -444,6 +444,15 @@
     "recordListRecordingFailed": {
         "message": "録画に失敗しました"
     },
+    "supportLicenses": {
+        "message": "ライセンス情報"
+    },
+    "supportOpenSourceLicenses": {
+        "message": "オープンソースライセンス"
+    },
+    "supportLicenseLoadError": {
+        "message": "ライセンス情報の読み込みに失敗しました。"
+    },
     "supportReview": {
         "message": "レビュー"
     },
