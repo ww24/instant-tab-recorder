@@ -38,7 +38,7 @@
     "@types/chrome": "^0.1.42",
     "@types/dom-mediacapture-transform": "^0.1.11",
     "@types/node": "^25.9.1",
-    "@vitest/browser-playwright": "^4.1.6",
+    "@vitest/browser-playwright": "^4.1.7",
     "@vitest/coverage-v8": "^4.1.2",
     "google-auth-library": "^10.6.2",
     "marked": "^18.0.4",
