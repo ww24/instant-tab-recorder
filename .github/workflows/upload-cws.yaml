@@ -15,7 +15,7 @@ jobs:
   upload:
     # Only run on bump/v* branches
     if: startsWith(github.ref, 'refs/heads/bump/v')
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: read
