@@ -37,7 +37,7 @@
     "@googleapis/chromewebstore": "^2.0.2",
     "@types/chrome": "^0.1.43",
     "@types/dom-mediacapture-transform": "^0.1.11",
-    "@types/node": "^25.9.1",
+    "@types/node": "^25.9.3",
     "@vitest/browser-playwright": "^4.1.6",
     "@vitest/coverage-v8": "^4.1.8",
     "google-auth-library": "^10.6.2",
