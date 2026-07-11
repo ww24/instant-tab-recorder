@@ -34,7 +34,7 @@
     "uuid": "^14.0.0"
   },
   "devDependencies": {
-    "@googleapis/chromewebstore": "^2.0.2",
+    "@googleapis/chromewebstore": "^3.0.0",
     "@types/chrome": "^0.1.43",
     "@types/dom-mediacapture-transform": "^0.1.11",
     "@types/node": "^25.9.3",
