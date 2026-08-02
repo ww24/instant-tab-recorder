@@ -1,12 +1,16 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="<%= lang %>">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Instant Tab Recorder - Blazingly simple tab recorder</title>
-    <meta name="description" content="Record any Chrome tab with just one click. Simple, fast, and privacy-focused.">
-    <link rel="icon" type="image/png" href="icon128.png">
+    <title><%= title %></title>
+    <meta name="description" content="<%= description %>">
+    <link rel="icon" type="image/png" href="<%= basePath %>icon128.png">
+    <link rel="canonical" href="<%= canonicalUrl %>">
+    <link rel="alternate" hreflang="en" href="https://recorder.appcloud.info/">
+    <link rel="alternate" hreflang="ja" href="https://recorder.appcloud.info/ja/">
+    <link rel="alternate" hreflang="x-default" href="https://recorder.appcloud.info/">
     <style>
         /* Design 1: Minimal White */
         *,
@@ -87,6 +91,12 @@
             font-size: 18px;
         }
 
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 24px;
+        }
+
         .header-links {
             display: flex;
             gap: 24px;
@@ -101,6 +111,42 @@
 
         .header-links a:hover {
             color: var(--accent);
+        }
+
+        .lang-switch {
+            display: flex;
+            align-items: center;
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 2px;
+            gap: 2px;
+        }
+
+        .lang-btn {
+            border: none;
+            background: transparent;
+            padding: 4px 10px;
+            border-radius: 16px;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: all 0.2s ease;
+            line-height: 1.2;
+            text-decoration: none;
+            display: inline-block;
+        }
+
+        .lang-btn:hover {
+            color: var(--text-primary);
+        }
+
+        .lang-btn.active {
+            background: white;
+            color: var(--accent);
+            font-weight: 600;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
         }
 
         /* Hero */
@@ -238,48 +284,13 @@
             background: var(--bg-secondary);
         }
 
-        .privacy-tabs {
-            display: flex;
-            justify-content: center;
-            gap: 8px;
-            margin-bottom: 32px;
-        }
-
-        .privacy-tab {
-            padding: 10px 24px;
-            border: 1px solid var(--border);
-            background: white;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 14px;
-            font-weight: 500;
-            color: var(--text-secondary);
-            transition: all 0.2s;
-        }
-
-        .privacy-tab:hover {
-            border-color: var(--accent);
-            color: var(--accent);
-        }
-
-        .privacy-tab.active {
-            background: var(--accent);
-            border-color: var(--accent);
-            color: white;
-        }
-
         .privacy-content {
-            display: none;
             background: white;
             border: 1px solid var(--border);
             border-radius: 12px;
             padding: 40px;
             max-height: 600px;
             overflow-y: auto;
-        }
-
-        .privacy-content.active {
-            display: block;
         }
 
         .privacy-content h1 {
@@ -417,31 +428,48 @@
     <!-- Header -->
     <header>
         <div class="container header-content">
-            <a href="./" class="logo" id="logo-link">
-                <img src="icon128.png" alt="Instant Tab Recorder">
+            <a href="<%= logoHref %>" class="logo" id="logo-link">
+                <img src="<%= basePath %>icon128.png" alt="Instant Tab Recorder">
                 <span>Instant Tab Recorder</span>
             </a>
-            <nav class="header-links">
-                <a href="#features">Features</a>
-                <a href="#how-to-use">How to Use</a>
-                <a href="#privacy">Privacy</a>
-            </nav>
+            <div class="header-right">
+                <nav class="header-links">
+                    <a href="#features">
+                        <span data-lang="en">Features</span>
+                        <span data-lang="ja">機能</span>
+                    </a>
+                    <a href="#how-to-use">
+                        <span data-lang="en">How to Use</span>
+                        <span data-lang="ja">使い方</span>
+                    </a>
+                    <a href="#privacy">
+                        <span data-lang="en">Privacy</span>
+                        <span data-lang="ja">プライバシーポリシー</span>
+                    </a>
+                </nav>
+                <div class="lang-switch">
+                    <a href="<%= enLink %>" class="lang-btn<%= enActive %>">English</a>
+                    <a href="<%= jaLink %>" class="lang-btn<%= jaActive %>">日本語</a>
+                </div>
+            </div>
         </div>
     </header>
 
     <!-- Hero -->
     <section class="hero">
         <div class="container">
-            <img src="icon128.png" alt="" class="hero-icon">
+            <img src="<%= basePath %>icon128.png" alt="" class="hero-icon">
             <h1>Instant Tab Recorder</h1>
-            <p class="tagline">Blazingly simple tab recorder.</p>
+            <p class="tagline" data-lang="en">Blazingly simple tab recorder.</p>
+            <p class="tagline" data-lang="ja">シンプルで高速なタブ録画ツール。</p>
             <a href="https://chromewebstore.google.com/detail/instant-tab-recorder/giebbnikpnedbdojlghnnegpfbgdecmi"
                 class="cta-button" target="_blank" rel="noopener">
                 <svg viewBox="0 0 24 24" fill="currentColor">
                     <path
                         d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z" />
                 </svg>
-                Add to Chrome
+                <span data-lang="en">Add to Chrome</span>
+                <span data-lang="ja">Chromeに追加</span>
             </a>
         </div>
     </section>
@@ -449,7 +477,10 @@
     <!-- Features -->
     <section class="features" id="features">
         <div class="container">
-            <h2 class="section-title">Features</h2>
+            <h2 class="section-title">
+                <span data-lang="en">Features</span>
+                <span data-lang="ja">機能</span>
+            </h2>
             <div class="features-grid">
                 <div class="feature">
                     <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
@@ -457,9 +488,10 @@
                         <circle cx="12" cy="12" r="10"></circle>
                         <circle cx="12" cy="12" r="3"></circle>
                     </svg>
-                    <h3>Instant Recording</h3>
-                    <p>Start recording any Chrome tab instantly with a single click, context menu, or keyboard
-                        shortcut.</p>
+                    <h3 data-lang="en">Instant Recording</h3>
+                    <h3 data-lang="ja">即座に録画開始</h3>
+                    <p data-lang="en">Start recording any Chrome tab instantly with a single click, context menu, or keyboard shortcut.</p>
+                    <p data-lang="ja">ワンクリック、右クリックメニュー、またはキーボードショートカットで、Chromeのタブを即座に録画開始できます。</p>
                 </div>
                 <div class="feature">
                     <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
@@ -467,8 +499,10 @@
                         <polygon points="23 7 16 12 23 17 23 7"></polygon>
                         <rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
                     </svg>
-                    <h3>Flexible Recording Modes</h3>
-                    <p>Choose from three modes: video with audio, video only, or audio only, to suit your needs.</p>
+                    <h3 data-lang="en">Flexible Recording Modes</h3>
+                    <h3 data-lang="ja">柔軟な録画モード</h3>
+                    <p data-lang="en">Choose from three modes: video with audio, video only, or audio only, to suit your needs.</p>
+                    <p data-lang="ja">用途に合わせて「音声付き動画」「動画のみ」「音声のみ」の3つのモードから選択できます。</p>
                 </div>
                 <div class="feature">
                     <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
@@ -478,9 +512,10 @@
                         <line x1="12" y1="19" x2="12" y2="23"></line>
                         <line x1="8" y1="23" x2="16" y2="23"></line>
                     </svg>
-                    <h3>Microphone & Audio Separation</h3>
-                    <p>Add microphone audio to your recording. Optionally save tab and mic audio as separate files for
-                        transcription or post-processing.</p>
+                    <h3 data-lang="en">Microphone & Audio Separation</h3>
+                    <h3 data-lang="ja">マイク音声・音声を分離</h3>
+                    <p data-lang="en">Add microphone audio to your recording. Optionally save tab and mic audio as separate files for transcription or post-processing.</p>
+                    <p data-lang="ja">録画にマイク音声を追加できます。タブの音声とマイク音声を別ファイルとして保存することもでき、文字起こしや後編集に便利です。</p>
                 </div>
                 <div class="feature">
                     <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
@@ -494,9 +529,10 @@
                         <line x1="17" y1="17" x2="22" y2="17"></line>
                         <line x1="17" y1="7" x2="22" y2="7"></line>
                     </svg>
-                    <h3>Cropping & Window Resize</h3>
-                    <p>Crop a portion of the visible area or resize the browser window to a specific dimension before
-                        recording.</p>
+                    <h3 data-lang="en">Cropping & Window Resize</h3>
+                    <h3 data-lang="ja">クロップ・ウィンドウサイズ変更</h3>
+                    <p data-lang="en">Crop a portion of the visible area or resize the browser window to a specific dimension before recording.</p>
+                    <p data-lang="ja">表示領域の一部をクロップしたり、録画前にブラウザウィンドウを指定のサイズにリサイズできます。</p>
                 </div>
                 <div class="feature">
                     <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
@@ -506,9 +542,10 @@
                             d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z">
                         </path>
                     </svg>
-                    <h3>Customizable Settings</h3>
-                    <p>Configure resolution, bitrate, format, and codec. Wide range of codecs including H.265, AV1,
-                        AAC, FLAC, and more.</p>
+                    <h3 data-lang="en">Customizable Settings</h3>
+                    <h3 data-lang="ja">柔軟な設定カスタマイズ</h3>
+                    <p data-lang="en">Configure resolution, bitrate, format, and codec. Wide range of codecs including H.265, AV1, AAC, FLAC, and more.</p>
+                    <p data-lang="ja">解像度、ビットレート、フォーマット、コーデックを設定可能。H.265、AV1、AAC、FLACなど幅広いコーデックに対応しています。</p>
                 </div>
                 <div class="feature">
                     <svg class="feature-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
@@ -521,8 +558,10 @@
                         <path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path>
                         <line x1="12" y1="20" x2="12.01" y2="20"></line>
                     </svg>
-                    <h3>Works Offline</h3>
-                    <p>No internet connection required. All recording and processing happens locally on your device.</p>
+                    <h3 data-lang="en">Works Offline</h3>
+                    <h3 data-lang="ja">オフライン対応</h3>
+                    <p data-lang="en">No internet connection required. All recording and processing happens locally on your device.</p>
+                    <p data-lang="ja">インターネット接続は不要です。すべての録画および処理はお使いのデバイス上でローカルに行われます。</p>
                 </div>
             </div>
         </div>
@@ -531,27 +570,36 @@
     <!-- How to Use -->
     <section id="how-to-use">
         <div class="container">
-            <h2 class="section-title">How to Use</h2>
+            <h2 class="section-title">
+                <span data-lang="en">How to Use</span>
+                <span data-lang="ja">使い方</span>
+            </h2>
             <div class="steps">
                 <div class="step">
                     <div class="step-number">1</div>
                     <div class="step-content">
-                        <h3>Install the Extension</h3>
-                        <p>Add Instant Tab Recorder to Chrome from the Chrome Web Store.</p>
+                        <h3 data-lang="en">Install the Extension</h3>
+                        <h3 data-lang="ja">拡張機能をインストール</h3>
+                        <p data-lang="en">Add Instant Tab Recorder to Chrome from the Chrome Web Store.</p>
+                        <p data-lang="ja">Chrome ウェブストアから Instant Tab Recorder を Chrome に追加します。</p>
                     </div>
                 </div>
                 <div class="step">
                     <div class="step-number">2</div>
                     <div class="step-content">
-                        <h3>Click to Record</h3>
-                        <p>Click the extension icon, use the context menu, or press a keyboard shortcut to begin.</p>
+                        <h3 data-lang="en">Click to Record</h3>
+                        <h3 data-lang="ja">クリックして録画開始</h3>
+                        <p data-lang="en">Click the extension icon, use the context menu, or press a keyboard shortcut to begin.</p>
+                        <p data-lang="ja">拡張機能のアイコンをクリックするか、コンテキストメニュー、またはショートカットキーを押して録画を開始します。</p>
                     </div>
                 </div>
                 <div class="step">
                     <div class="step-number">3</div>
                     <div class="step-content">
-                        <h3>Save & Share</h3>
-                        <p>Stop the recording and download it in WebM or MP4 format.</p>
+                        <h3 data-lang="en">Save & Share</h3>
+                        <h3 data-lang="ja">保存・共有</h3>
+                        <p data-lang="en">Stop the recording and download it in WebM or MP4 format.</p>
+                        <p data-lang="ja">録画を停止し、WebMまたはMP4形式でダウンロードします。</p>
                     </div>
                 </div>
             </div>
@@ -561,13 +609,12 @@
     <!-- Privacy Policy -->
     <section class="privacy" id="privacy">
         <div class="container">
-            <h2 class="section-title">Privacy Policy</h2>
-            <div class="privacy-tabs">
-                <button class="privacy-tab active" data-lang="en">English</button>
-                <button class="privacy-tab" data-lang="ja">日本語</button>
-            </div>
+            <h2 class="section-title">
+                <span data-lang="en">Privacy Policy</span>
+                <span data-lang="ja">プライバシーポリシー</span>
+            </h2>
 
-            <div class="privacy-content active" data-lang="en" id="privacy-en">
+            <div class="privacy-content" data-lang="en" id="privacy-en">
                 <%= privacyEn %>
             </div>
             <div class="privacy-content" data-lang="ja" id="privacy-ja">
@@ -602,7 +649,7 @@
         </div>
     </footer>
 
-    <script type="module" src="src/site.ts"></script>
+    <script type="module" src="<%= basePath %>src/site.ts"></script>
 </body>
 
 </html>
