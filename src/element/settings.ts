@@ -368,9 +368,9 @@ export class Settings extends LitElement {
                         </md-filled-select>
                         <md-filled-text-field
                             class="video-format-input audio-codec-settings"
-                            style="visibility: ${this.config.videoFormat.audioBitratePreset === 'custom'
-                                ? 'visible'
-                                : 'hidden'}"
+                            style="visibility: ${
+                                this.config.videoFormat.audioBitratePreset === 'custom' ? 'visible' : 'hidden'
+                            }"
                             label=${t('settingsCustomAudioBitrate')}
                             type="number"
                             min="1"
@@ -426,9 +426,9 @@ export class Settings extends LitElement {
                         </md-filled-select>
                         <md-filled-text-field
                             class="video-format-input video-codec-settings"
-                            style="visibility: ${this.config.videoFormat.videoBitratePreset === 'custom'
-                                ? 'visible'
-                                : 'hidden'}"
+                            style="visibility: ${
+                                this.config.videoFormat.videoBitratePreset === 'custom' ? 'visible' : 'hidden'
+                            }"
                             label=${t('settingsCustomVideoBitrate')}
                             type="number"
                             min="1"
@@ -438,9 +438,11 @@ export class Settings extends LitElement {
                             .value=${live((this.config.videoFormat.videoBitrate / 1000 / 1000).toFixed(2))}
                             @change=${this.updateProp('videoFormat', 'videoBitrate')}></md-filled-text-field>
                     </div>
-                    ${this.encodeErrors.length > 0
-                        ? html` <div class="encode-error">${this.encodeErrors.join('\n')}</div> `
-                        : ''}
+                    ${
+                        this.encodeErrors.length > 0
+                            ? html` <div class="encode-error">${this.encodeErrors.join('\n')}</div> `
+                            : ''
+                    }
                 </div>
             </section>
 
@@ -453,57 +455,63 @@ export class Settings extends LitElement {
                             ?selected=${live(this.config.microphone.enabled ?? false)}
                             @input=${this.updateProp('microphone', 'enabled')}></md-switch>
                     </label>
-                    ${this.config.microphone.enabled
-                        ? html`
-                              <div class="mic-status ${this.microphonePermissionGranted ? 'granted' : 'required'}">
-                                  ${t(
-                                      'settingsMicStatus',
-                                      this.microphonePermissionGranted
-                                          ? t('settingsPermissionGranted')
-                                          : t('settingsPermissionRequired'),
-                                  )}
-                              </div>
-                              ${this.availableMicrophones.length > 0
-                                  ? html`
-                                        <div>
-                                            <label for="mic-device" class="field-label"
-                                                >${t('settingsMicDevice')}</label
-                                            >
-                                            <md-filled-select
-                                                id="mic-device"
-                                                .value=${this.config.microphone.deviceId ?? 'default'}
-                                                @input=${this.updateProp('microphone', 'deviceId')}>
-                                                <md-select-option value="default">
-                                                    <div slot="headline">${t('settingsDefaultDevice')}</div>
-                                                </md-select-option>
-                                                ${this.availableMicrophones.map(
-                                                    device => html`
-                                                        <md-select-option value=${device.deviceId}>
-                                                            <div slot="headline">
-                                                                ${device.label ??
-                                                                `Microphone ${device.deviceId.slice(0, 8)}...`}
-                                                            </div>
+                    ${
+                        this.config.microphone.enabled
+                            ? html`
+                                  <div class="mic-status ${this.microphonePermissionGranted ? 'granted' : 'required'}">
+                                      ${t(
+                                          'settingsMicStatus',
+                                          this.microphonePermissionGranted
+                                              ? t('settingsPermissionGranted')
+                                              : t('settingsPermissionRequired'),
+                                      )}
+                                  </div>
+                                  ${
+                                      this.availableMicrophones.length > 0
+                                          ? html`
+                                                <div>
+                                                    <label for="mic-device" class="field-label"
+                                                        >${t('settingsMicDevice')}</label
+                                                    >
+                                                    <md-filled-select
+                                                        id="mic-device"
+                                                        .value=${this.config.microphone.deviceId ?? 'default'}
+                                                        @input=${this.updateProp('microphone', 'deviceId')}>
+                                                        <md-select-option value="default">
+                                                            <div slot="headline">${t('settingsDefaultDevice')}</div>
                                                         </md-select-option>
-                                                    `,
-                                                )}
-                                            </md-filled-select>
-                                        </div>
-                                    `
-                                  : ''}
-                              <div>
-                                  <label for="mic-gain" class="field-label">
-                                      ${t('settingsMicVolume', formatNum(this.config.microphone.gain, 1))}
-                                  </label>
-                                  <md-slider
-                                      id="mic-gain"
-                                      min="0"
-                                      max="10"
-                                      step="0.1"
-                                      .value=${live(this.config.microphone.gain)}
-                                      @input=${this.updateProp('microphone', 'gain')}></md-slider>
-                              </div>
-                          `
-                        : ''}
+                                                        ${this.availableMicrophones.map(
+                                                            device => html`
+                                                                <md-select-option value=${device.deviceId}>
+                                                                    <div slot="headline">
+                                                                        ${
+                                                                            device.label ??
+                                                                            `Microphone ${device.deviceId.slice(0, 8)}...`
+                                                                        }
+                                                                    </div>
+                                                                </md-select-option>
+                                                            `,
+                                                        )}
+                                                    </md-filled-select>
+                                                </div>
+                                            `
+                                          : ''
+                                  }
+                                  <div>
+                                      <label for="mic-gain" class="field-label">
+                                          ${t('settingsMicVolume', formatNum(this.config.microphone.gain, 1))}
+                                      </label>
+                                      <md-slider
+                                          id="mic-gain"
+                                          min="0"
+                                          max="10"
+                                          step="0.1"
+                                          .value=${live(this.config.microphone.gain)}
+                                          @input=${this.updateProp('microphone', 'gain')}></md-slider>
+                                  </div>
+                              `
+                            : ''
+                    }
                 </div>
             </section>
 
@@ -538,11 +546,15 @@ export class Settings extends LitElement {
                         ?disabled=${live(!this.config.recordingTimer.enabled)}
                         .value=${live(String(this.config.recordingTimer.durationMinutes))}
                         @change=${this.updateProp('recordingTimer', 'durationMinutes')}></md-filled-text-field>
-                    ${this.config.recordingTimer.enabled && this.timerEstimateText
-                        ? html`
-                              <div class="timer-estimate">${t('settingsTimerEstimate', this.timerEstimateText)}</div>
-                          `
-                        : ''}
+                    ${
+                        this.config.recordingTimer.enabled && this.timerEstimateText
+                            ? html`
+                                  <div class="timer-estimate">
+                                      ${t('settingsTimerEstimate', this.timerEstimateText)}
+                                  </div>
+                              `
+                            : ''
+                    }
                     <label class="switch-label" title="${t('settingsShowTimerStopConfirmationTitle')}">
                         ${t('settingsShowTimerStopConfirmation')}
                         <md-switch
