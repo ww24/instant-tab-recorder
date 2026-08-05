@@ -36,9 +36,11 @@ export default class Alert extends LitElement {
             <md-dialog>
                 <div slot="headline">${this.headline}</div>
                 <form id="form" slot="content" method="dialog">
-                    ${this.preformatted
-                        ? html`<pre>${this.content}</pre>`
-                        : this.content.split('\n').map(p => html`<p>${p}</p>`)}
+                    ${
+                        this.preformatted
+                            ? html`<pre>${this.content}</pre>`
+                            : this.content.split('\n').map(p => html`<p>${p}</p>`)
+                    }
                 </form>
                 <div slot="actions">
                     <md-text-button form="form" value="ok" autofocus>${t('alertOk')}</md-text-button>

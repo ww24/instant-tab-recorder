@@ -321,79 +321,100 @@ export class RecordList extends LitElement {
                             ?checked=${record.selected}
                             @input=${this.selectRecord(record)}></md-checkbox>
                         <div class="thumbnail-container">
-                            ${record.isRecording
-                                ? html`<div class="thumbnail-recording">${t('recordListThumbnailRecording')}</div>`
-                                : record.thumbnailFileName && !this.hasThumbnailLoadFailed(record)
-                                  ? html`<img
-                                        src="${getRecordingFileUrl(record.thumbnailFileName)}"
-                                        alt=""
-                                        loading="lazy"
-                                        @error=${() => this.handleThumbnailError(record)} />`
-                                  : html`<div class="thumbnail-placeholder">
-                                        ${t('recordListThumbnailUnavailable')}
-                                    </div>`}
+                            ${
+                                record.isRecording
+                                    ? html`<div class="thumbnail-recording">${t('recordListThumbnailRecording')}</div>`
+                                    : record.thumbnailFileName && !this.hasThumbnailLoadFailed(record)
+                                      ? html`<img
+                                            src="${getRecordingFileUrl(record.thumbnailFileName)}"
+                                            alt=""
+                                            loading="lazy"
+                                            @error=${() => this.handleThumbnailError(record)} />`
+                                      : html`<div class="thumbnail-placeholder">
+                                            ${t('recordListThumbnailUnavailable')}
+                                        </div>`
+                            }
                         </div>
                     </div>
                     <div class="recording-title" slot="headline">
-                        ${record.isRecording
-                            ? html`<span aria-disabled="true">${record.title}</span>`
-                            : html`<a href="${downloadUrl}">${record.title}</a>`}
-                        ${record.isRecording
-                            ? ''
-                            : record.subFiles.map(sub => {
-                                  const subUrl = `${getRecordingFileUrl(sub.path)}?download=true`
-                                  const label = sub.type === 'tab' ? t('recordListTabAudio') : t('recordListMicAudio')
-                                  const icon = sub.type === 'tab' ? 'headphones' : 'mic'
-                                  return html`<a
-                                      href="${subUrl}"
-                                      title="${label}"
-                                      aria-label="${t('recordListDownloadLabel', label)}"
-                                      class="sub-file-icon"
-                                      ><md-icon>${icon}</md-icon></a
-                                  >`
-                              })}
+                        ${
+                            record.isRecording
+                                ? html`<span aria-disabled="true">${record.title}</span>`
+                                : html`<a href="${downloadUrl}">${record.title}</a>`
+                        }
+                        ${
+                            record.isRecording
+                                ? ''
+                                : record.subFiles.map(sub => {
+                                      const subUrl = `${getRecordingFileUrl(sub.path)}?download=true`
+                                      const label =
+                                          sub.type === 'tab' ? t('recordListTabAudio') : t('recordListMicAudio')
+                                      const icon = sub.type === 'tab' ? 'headphones' : 'mic'
+                                      return html`<a
+                                          href="${subUrl}"
+                                          title="${label}"
+                                          aria-label="${t('recordListDownloadLabel', label)}"
+                                          class="sub-file-icon"
+                                          ><md-icon>${icon}</md-icon></a
+                                      >`
+                                  })
+                        }
                     </div>
                     <div class="item-content" slot="supporting-text">
                         <div class="meta" title=${t('recordListTitleFileSize')}>
                             <md-icon>storage</md-icon> ${formatFileSize(record.size + record.subFilesSize)}
-                            ${record.subFilesSize > 0
-                                ? html` <span class="separated-size" title=${t('recordListTitleSeparatedSize')}
-                                      >(${t('recordListSeparatedSize', formatFileSize(record.subFilesSize))})</span
-                                  >`
-                                : ''}
+                            ${
+                                record.subFilesSize > 0
+                                    ? html` <span class="separated-size" title=${t('recordListTitleSeparatedSize')}
+                                          >(${t('recordListSeparatedSize', formatFileSize(record.subFilesSize))})</span
+                                      >`
+                                    : ''
+                            }
                         </div>
-                        ${record.recordedAt != null
-                            ? html`<div class="meta" title=${t('recordListTitleRecordedAt')}>
-                                  <md-icon>schedule</md-icon>
-                                  ${RecordList.dateTimeFormat.format(record.recordedAt)}
-                              </div>`
-                            : ''}
-                        ${record.durationMs != null && !record.isRecording
-                            ? html`<div class="meta" title=${t('recordListTitleDuration')}>
-                                  <md-icon>timer</md-icon> ${formatElapsedTime(record.durationMs)}
-                              </div>`
-                            : ''}
-                        ${record.isRecording
-                            ? html`<div class="meta recording" title=${t('recordListTitleRecording')}>
-                                  <md-icon>screen_record</md-icon>
-                                  ${this.recordingPaused ? t('recordListPaused') : t('recordListRecording')}
-                                  <span class="elapsed-time${this.recordingPaused ? ' elapsed-blink' : ''}"
-                                      >${this.elapsedTimeText}</span
-                                  >${this.timerStopText
-                                      ? html` <span title=${t('recordListTitleTimerStop')}
-                                            >(⏱
-                                            ${this.recordingPaused
-                                                ? t('recordListTimerPaused')
-                                                : t('recordListTimerStopsAt', this.timerStopText)})</span
-                                        >`
-                                      : ''}
-                              </div>`
-                            : ''}
-                        ${record.isCanceled
-                            ? html`<div class="meta canceled" title=${t('recordListTitleCanceled')}>
-                                  <md-icon>cancel</md-icon> ${t('recordListCanceled')}
-                              </div>`
-                            : ''}
+                        ${
+                            record.recordedAt != null
+                                ? html`<div class="meta" title=${t('recordListTitleRecordedAt')}>
+                                      <md-icon>schedule</md-icon>
+                                      ${RecordList.dateTimeFormat.format(record.recordedAt)}
+                                  </div>`
+                                : ''
+                        }
+                        ${
+                            record.durationMs != null && !record.isRecording
+                                ? html`<div class="meta" title=${t('recordListTitleDuration')}>
+                                      <md-icon>timer</md-icon> ${formatElapsedTime(record.durationMs)}
+                                  </div>`
+                                : ''
+                        }
+                        ${
+                            record.isRecording
+                                ? html`<div class="meta recording" title=${t('recordListTitleRecording')}>
+                                      <md-icon>screen_record</md-icon>
+                                      ${this.recordingPaused ? t('recordListPaused') : t('recordListRecording')}
+                                      <span class="elapsed-time${this.recordingPaused ? ' elapsed-blink' : ''}"
+                                          >${this.elapsedTimeText}</span
+                                      >${
+                                          this.timerStopText
+                                              ? html` <span title=${t('recordListTitleTimerStop')}
+                                                    >(⏱
+                                                    ${
+                                                        this.recordingPaused
+                                                            ? t('recordListTimerPaused')
+                                                            : t('recordListTimerStopsAt', this.timerStopText)
+                                                    })</span
+                                                >`
+                                              : ''
+                                      }
+                                  </div>`
+                                : ''
+                        }
+                        ${
+                            record.isCanceled
+                                ? html`<div class="meta canceled" title=${t('recordListTitleCanceled')}>
+                                      <md-icon>cancel</md-icon> ${t('recordListCanceled')}
+                                  </div>`
+                                : ''
+                        }
                     </div>
                     <md-filled-icon-button slot="end" ?disabled=${record.isRecording} @click=${this.playRecord(record)}>
                         <md-icon>play_arrow</md-icon>
@@ -431,13 +452,15 @@ export class RecordList extends LitElement {
                 </md-assist-chip>
             </md-chip-set>
             <md-list>
-                ${this.fetchError
-                    ? html`<md-list-item style="--md-list-item-label-text-color: var(--theme-error, #b00020)">
-                          ${t('recordListFetchError')}
-                      </md-list-item>`
-                    : this.records.length === 0
-                      ? html`<md-list-item>${t('recordListNoEntry')}</md-list-item>`
-                      : repeat(this.records, record => record.path, row)}
+                ${
+                    this.fetchError
+                        ? html`<md-list-item style="--md-list-item-label-text-color: var(--theme-error, #b00020)">
+                              ${t('recordListFetchError')}
+                          </md-list-item>`
+                        : this.records.length === 0
+                          ? html`<md-list-item>${t('recordListNoEntry')}</md-list-item>`
+                          : repeat(this.records, record => record.path, row)
+                }
             </md-list>`
     }
 

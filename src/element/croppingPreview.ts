@@ -357,17 +357,17 @@ export class CroppingPreview extends LitElement {
             <!-- Bottom -->
             <div
                 class="dim-overlay"
-                style="top: ${cropY + cropH}px; left: 0; width: ${screenW}px; height: ${screenH -
-                cropY -
-                cropH}px;"></div>
+                style="top: ${cropY + cropH}px; left: 0; width: ${screenW}px; height: ${
+                    screenH - cropY - cropH
+                }px;"></div>
             <!-- Left -->
             <div class="dim-overlay" style="top: ${cropY}px; left: 0; width: ${cropX}px; height: ${cropH}px;"></div>
             <!-- Right -->
             <div
                 class="dim-overlay"
-                style="top: ${cropY}px; left: ${cropX + cropW}px; width: ${screenW -
-                cropX -
-                cropW}px; height: ${cropH}px;"></div>
+                style="top: ${cropY}px; left: ${cropX + cropW}px; width: ${
+                    screenW - cropX - cropW
+                }px; height: ${cropH}px;"></div>
         `
     }
 
@@ -388,35 +388,37 @@ export class CroppingPreview extends LitElement {
                 @pointerdown=${this.handleCropPointerDown}
                 @pointermove=${this.handlePointerMove}
                 @pointerup=${this.handlePointerUp}>
-                ${!disabled
-                    ? html`
-                          <div
-                              class="resize-handle nw"
-                              @pointerdown=${(e: PointerEvent) => this.handleResizePointerDown(e, 'nw')}
-                              @pointermove=${this.handlePointerMove}
-                              @pointerup=${this.handlePointerUp}></div>
-                          <div
-                              class="resize-handle ne"
-                              @pointerdown=${(e: PointerEvent) => this.handleResizePointerDown(e, 'ne')}
-                              @pointermove=${this.handlePointerMove}
-                              @pointerup=${this.handlePointerUp}></div>
-                          <div
-                              class="resize-handle sw"
-                              @pointerdown=${(e: PointerEvent) => this.handleResizePointerDown(e, 'sw')}
-                              @pointermove=${this.handlePointerMove}
-                              @pointerup=${this.handlePointerUp}></div>
-                          <div
-                              class="resize-handle se"
-                              @pointerdown=${(e: PointerEvent) => this.handleResizePointerDown(e, 'se')}
-                              @pointermove=${this.handlePointerMove}
-                              @pointerup=${this.handlePointerUp}></div>
-                      `
-                    : html`
-                          <div class="resize-handle nw disabled"></div>
-                          <div class="resize-handle ne disabled"></div>
-                          <div class="resize-handle sw disabled"></div>
-                          <div class="resize-handle se disabled"></div>
-                      `}
+                ${
+                    !disabled
+                        ? html`
+                              <div
+                                  class="resize-handle nw"
+                                  @pointerdown=${(e: PointerEvent) => this.handleResizePointerDown(e, 'nw')}
+                                  @pointermove=${this.handlePointerMove}
+                                  @pointerup=${this.handlePointerUp}></div>
+                              <div
+                                  class="resize-handle ne"
+                                  @pointerdown=${(e: PointerEvent) => this.handleResizePointerDown(e, 'ne')}
+                                  @pointermove=${this.handlePointerMove}
+                                  @pointerup=${this.handlePointerUp}></div>
+                              <div
+                                  class="resize-handle sw"
+                                  @pointerdown=${(e: PointerEvent) => this.handleResizePointerDown(e, 'sw')}
+                                  @pointermove=${this.handlePointerMove}
+                                  @pointerup=${this.handlePointerUp}></div>
+                              <div
+                                  class="resize-handle se"
+                                  @pointerdown=${(e: PointerEvent) => this.handleResizePointerDown(e, 'se')}
+                                  @pointermove=${this.handlePointerMove}
+                                  @pointerup=${this.handlePointerUp}></div>
+                          `
+                        : html`
+                              <div class="resize-handle nw disabled"></div>
+                              <div class="resize-handle ne disabled"></div>
+                              <div class="resize-handle sw disabled"></div>
+                              <div class="resize-handle se disabled"></div>
+                          `
+                }
             </div>
         `
     }
@@ -428,9 +430,11 @@ export class CroppingPreview extends LitElement {
             <div class="preview-container">
                 <div class="preview-wrapper">
                     <canvas class="preview-canvas ${showPreview ? '' : 'hidden'}"></canvas>
-                    ${showPreview
-                        ? html` ${this.renderDimOverlays()} ${this.renderCropOverlay()} `
-                        : html` <p class="preview-message">${t('croppingPreviewMessage')}</p> `}
+                    ${
+                        showPreview
+                            ? html` ${this.renderDimOverlays()} ${this.renderCropOverlay()} `
+                            : html` <p class="preview-message">${t('croppingPreviewMessage')}</p> `
+                    }
                 </div>
             </div>
         `
