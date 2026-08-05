@@ -1,9 +1,13 @@
-import { readFileSync } from 'fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import path from 'path'
 import { defineConfig, Plugin } from 'vite'
 import { marked } from 'marked'
 
 const docsDir = import.meta.dirname
+const indexHtmlPath = path.resolve(docsDir, 'index.html')
+const jaDir = path.resolve(docsDir, 'ja')
+const jaIndexHtmlPath = path.resolve(jaDir, 'index.html')
+
 const privacyMdFiles = {
     en: path.resolve(docsDir, 'PRIVACY.md'),
     ja: path.resolve(docsDir, 'PRIVACY_JA.md'),
@@ -29,19 +33,76 @@ function renderPrivacyPage(templateHtml: string, page: (typeof privacyPages)[num
         .replace(/<%=\s*content\s*%>/g, () => content)
 }
 
+const PAGE_CONFIG = {
+    en: {
+        lang: 'en',
+        title: 'Instant Tab Recorder - Blazingly simple tab recorder',
+        description: 'Record any Chrome tab with just one click. Simple, fast, and privacy-focused.',
+        canonicalUrl: 'https://recorder.appcloud.info/',
+        basePath: './',
+        logoHref: './',
+        enLink: './',
+        jaLink: './ja/',
+        enActive: ' active',
+        jaActive: '',
+    },
+    ja: {
+        lang: 'ja',
+        title: 'Instant Tab Recorder - シンプルで高速なタブ録画ツール',
+        description: 'ワンクリックでChromeのタブを録画。シンプル、高速、そしてプライバシーに配慮。',
+        canonicalUrl: 'https://recorder.appcloud.info/ja/',
+        basePath: '../',
+        logoHref: '../ja/',
+        enLink: '../',
+        jaLink: './',
+        enActive: '',
+        jaActive: ' active',
+    },
+}
+
+function renderLpPage(templateHtml: string, lang: 'en' | 'ja'): string {
+    const config = PAGE_CONFIG[lang]
+    const vars = loadPrivacy()
+
+    // 1. Remove opposite language data-lang blocks
+    const targetRemoveLang = lang === 'en' ? 'ja' : 'en'
+    const removeRegex = new RegExp(`<\\w+[^>]*\\bdata-lang="${targetRemoveLang}"[^>]*>[\\s\\S]*?<\\/\\w+>`, 'gi')
+    let result = templateHtml.replace(removeRegex, '')
+
+    // 2. Clean up current language data-lang attribute
+    result = result.replace(new RegExp(`\\s*data-lang="${lang}"`, 'g'), '')
+
+    // 3. Render privacy placeholders
+    result = result
+        .replace(/<%=\s*privacyEn\s*%>/g, () => vars.privacyEn)
+        .replace(/<%=\s*privacyJa\s*%>/g, () => vars.privacyJa)
+
+    // 4. Replace page configuration variables
+    result = result.replace(/<%=\s*(\w+)\s*%>/g, (_, key) => {
+        return config[key as keyof typeof config] ?? ''
+    })
+
+    return result
+}
+
+function buildLocalizedHtmlInput() {
+    // Generate temporary ja/index.html so Vite natively outputs to dist/ja/index.html
+    if (!existsSync(jaDir)) {
+        mkdirSync(jaDir, { recursive: true })
+    }
+    const rawTemplate = readFileSync(indexHtmlPath, 'utf-8')
+    writeFileSync(jaIndexHtmlPath, rawTemplate, 'utf-8')
+
+    return {
+        main: indexHtmlPath,
+        ja: jaIndexHtmlPath,
+    }
+}
+
 function docsPlugin(): Plugin[] {
     const buildPlugin: Plugin = {
         name: 'docs-build',
         apply: 'build',
-        transformIndexHtml: {
-            order: 'pre',
-            handler(html) {
-                const vars = loadPrivacy()
-                return html.replace(/<%=\s*(\w+)\s*%>/g, (_, key) => {
-                    return (vars as Record<string, string>)[key] ?? ''
-                })
-            },
-        },
         buildStart() {
             const vars = loadPrivacy()
             const templateHtml = readFileSync(privacyTemplate, 'utf-8')
@@ -58,6 +119,19 @@ function docsPlugin(): Plugin[] {
             const iconData = readFileSync(path.resolve(docsDir, '..', 'extension/icons/icon128.png'))
             this.emitFile({ type: 'asset', fileName: 'icon128.png', source: iconData })
         },
+        transformIndexHtml: {
+            order: 'pre',
+            handler(html, ctx) {
+                const isJa = ctx?.filename?.includes('/ja/')
+                return renderLpPage(html, isJa ? 'ja' : 'en')
+            },
+        },
+        closeBundle() {
+            // Clean up temporary ja source directory after build
+            if (existsSync(jaDir)) {
+                rmSync(jaDir, { recursive: true, force: true })
+            }
+        },
     }
 
     const servePlugin: Plugin = {
@@ -65,11 +139,11 @@ function docsPlugin(): Plugin[] {
         apply: 'serve',
         transformIndexHtml: {
             order: 'pre',
-            handler(html) {
-                const vars = loadPrivacy()
-                return html.replace(/<%=\s*(\w+)\s*%>/g, (_, key) => {
-                    return (vars as Record<string, string>)[key] ?? ''
-                })
+            handler(html, ctx) {
+                if (ctx?.filename?.includes('/ja/')) {
+                    return renderLpPage(html, 'ja')
+                }
+                return renderLpPage(html, 'en')
             },
         },
         configureServer(server) {
@@ -80,7 +154,6 @@ function docsPlugin(): Plugin[] {
                     const vars = loadPrivacy()
                     const templateHtml = readFileSync(privacyTemplate, 'utf-8')
                     const html = renderPrivacyPage(templateHtml, match, vars[match.contentKey])
-                    // Inject Vite HMR client for hot reload
                     const injected = html.replace(
                         '</head>',
                         '  <script type="module" src="/@vite/client"></script>\n</head>',
@@ -98,15 +171,14 @@ function docsPlugin(): Plugin[] {
                 }
                 next()
             })
-            // Watch markdown files and privacy template for reload
-            server.watcher.add([privacyMdFiles.en, privacyMdFiles.ja, privacyTemplate])
+            server.watcher.add([privacyMdFiles.en, privacyMdFiles.ja, privacyTemplate, indexHtmlPath])
             server.watcher.on('change', changedPath => {
-                if (
-                    changedPath === privacyMdFiles.en ||
-                    changedPath === privacyMdFiles.ja ||
-                    changedPath === privacyTemplate
-                ) {
-                    server.ws.send({ type: 'full-reload' })
+                switch (changedPath) {
+                    case privacyMdFiles.en:
+                    case privacyMdFiles.ja:
+                    case privacyTemplate:
+                    case indexHtmlPath:
+                        server.ws.send({ type: 'full-reload' })
                 }
             })
         },
@@ -117,6 +189,7 @@ function docsPlugin(): Plugin[] {
 
 export default defineConfig({
     root: docsDir,
+    input: buildLocalizedHtmlInput(),
     server: {
         port: 8080,
     },
