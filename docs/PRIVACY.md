@@ -4,6 +4,8 @@ This privacy policy aims to provide you with a understanding of how the website 
 
 We place a high priority on protecting the privacy of our users and will not obtain, retain, or provide data unnecessarily.
 
+This Privacy Policy constitutes an integral part of our [Terms of Service](TERMS.md).
+
 ## Purpose of Use
 
 The purpose is to achieve the following items necessary for the operation of the service
@@ -52,4 +54,4 @@ In order to improve the quality of our services, we use the following external s
 This Privacy Policy may be revised from time to time.
 Revised versions will be posted on this site.
 
-Updated: 2026-02-10
+Updated: 2026-09-04
