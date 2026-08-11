@@ -279,9 +279,82 @@
             color: var(--text-secondary);
         }
 
-        /* Privacy */
+        /* Privacy & Legal Tabs (Minimal Line Tabs) */
         .privacy {
             background: var(--bg-secondary);
+        }
+
+        .legal-tabs-wrapper {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 32px;
+            border-bottom: 1px solid var(--border);
+            width: 100%;
+        }
+
+        .legal-tabs {
+            display: flex;
+            gap: 32px;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .legal-tab-btn {
+            border: none;
+            background: transparent;
+            padding: 12px 4px;
+            font-size: 15px;
+            font-weight: 500;
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: color 0.2s ease, border-color 0.2s ease;
+            outline: none;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -1px;
+            display: inline-flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+        }
+
+        .legal-tab-btn [data-text] {
+            display: inline-flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .legal-tab-btn [data-text]::after {
+            content: attr(data-text);
+            font-weight: 600;
+            height: 0;
+            visibility: hidden;
+            overflow: hidden;
+            user-select: none;
+            pointer-events: none;
+        }
+
+        .legal-tab-btn:hover {
+            color: var(--text-primary);
+        }
+
+        .legal-tab-btn.active {
+            color: var(--accent);
+            font-weight: 600;
+            border-bottom-color: var(--accent);
+        }
+
+        .legal-tab-btn:focus-visible {
+            outline: 2px solid var(--accent);
+            outline-offset: 2px;
+            border-radius: 2px;
+        }
+
+        .legal-tab-panel {
+            display: none;
+        }
+
+        .legal-tab-panel.active {
+            display: block;
         }
 
         .privacy-content {
@@ -442,9 +515,9 @@
                         <span data-lang="en">How to Use</span>
                         <span data-lang="ja">使い方</span>
                     </a>
-                    <a href="#privacy">
-                        <span data-lang="en">Privacy</span>
-                        <span data-lang="ja">プライバシーポリシー</span>
+                    <a href="#terms">
+                        <span data-lang="en">Terms</span>
+                        <span data-lang="ja">規約</span>
                     </a>
                 </nav>
                 <div class="lang-switch">
@@ -606,19 +679,43 @@
         </div>
     </section>
 
-    <!-- Privacy Policy -->
-    <section class="privacy" id="privacy">
+    <!-- Terms & Legal Section -->
+    <section class="privacy" id="terms">
         <div class="container">
             <h2 class="section-title">
-                <span data-lang="en">Privacy Policy</span>
-                <span data-lang="ja">プライバシーポリシー</span>
+                <span data-lang="en">Terms</span>
+                <span data-lang="ja">規約</span>
             </h2>
 
-            <div class="privacy-content" data-lang="en" id="privacy-en">
-                <%= privacyEn %>
+            <div class="legal-tabs-wrapper">
+                <div class="legal-tabs" role="tablist">
+                    <button class="legal-tab-btn active" role="tab" id="tab-terms-btn" aria-controls="terms-tab-panel" aria-selected="true" data-tab="terms">
+                        <span data-lang="en" data-text="Terms of Service">Terms of Service</span>
+                        <span data-lang="ja" data-text="利用規約">利用規約</span>
+                    </button>
+                    <button class="legal-tab-btn" role="tab" id="tab-privacy-btn" aria-controls="privacy-tab-panel" aria-selected="false" data-tab="privacy">
+                        <span data-lang="en" data-text="Privacy Policy">Privacy Policy</span>
+                        <span data-lang="ja" data-text="プライバシーポリシー">プライバシーポリシー</span>
+                    </button>
+                </div>
             </div>
-            <div class="privacy-content" data-lang="ja" id="privacy-ja">
-                <%= privacyJa %>
+
+            <div class="legal-tab-panel active" id="terms-tab-panel" role="tabpanel" aria-labelledby="tab-terms-btn">
+                <div class="privacy-content" data-lang="en" id="terms-en">
+                    <%= termsEn %>
+                </div>
+                <div class="privacy-content" data-lang="ja" id="terms-ja">
+                    <%= termsJa %>
+                </div>
+            </div>
+
+            <div class="legal-tab-panel" id="privacy-tab-panel" role="tabpanel" aria-labelledby="tab-privacy-btn" style="display: none;">
+                <div class="privacy-content" data-lang="en" id="privacy-en">
+                    <%= privacyEn %>
+                </div>
+                <div class="privacy-content" data-lang="ja" id="privacy-ja">
+                    <%= privacyJa %>
+                </div>
             </div>
         </div>
     </section>
