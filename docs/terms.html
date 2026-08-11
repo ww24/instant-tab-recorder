@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="<%= lang %>">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>
+        <%= title %> - Instant Tab Recorder
+    </title>
+    <meta name="description" content="<%= title %> for Instant Tab Recorder">
+    <link rel="icon" type="image/png" href="icon128.png">
+    <style>
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        :root {
+            --text-primary: #333333;
+            --text-secondary: #666666;
+            --text-muted: #999999;
+            --accent: #4285F4;
+            --accent-hover: #3367D6;
+            --bg-primary: #FFFFFF;
+            --bg-secondary: #F8F9FA;
+            --border: #E0E0E0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            color: var(--text-primary);
+            background: var(--bg-secondary);
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 40px 24px;
+        }
+
+        .back-link {
+            display: inline-block;
+            margin-bottom: 24px;
+            color: var(--accent);
+            text-decoration: none;
+            font-size: 14px;
+        }
+
+        .back-link:hover {
+            text-decoration: underline;
+        }
+
+        .privacy-content {
+            background: white;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 40px;
+        }
+
+        .privacy-content h1 {
+            font-size: 24px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .privacy-content h2 {
+            font-size: 18px;
+            font-weight: 600;
+            margin-top: 32px;
+            margin-bottom: 12px;
+        }
+
+        .privacy-content h3 {
+            font-size: 18px;
+            font-weight: 600;
+            margin-top: 32px;
+            margin-bottom: 12px;
+        }
+
+        .privacy-content p {
+            color: var(--text-secondary);
+            margin-bottom: 12px;
+        }
+
+        .privacy-content ul {
+            color: var(--text-secondary);
+            margin-left: 24px;
+            margin-bottom: 12px;
+        }
+
+        .privacy-content li {
+            margin-bottom: 8px;
+        }
+
+        .privacy-content a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+
+        .privacy-content a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <a href="./" class="back-link">&larr; Back to top</a>
+        <div class="privacy-content">
+            <%= content %>
+        </div>
+    </div>
+</body>
+
+</html>
