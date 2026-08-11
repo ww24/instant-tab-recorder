@@ -30,19 +30,17 @@ function createMockOutputManager(): OutputManager & { createAudioTrackOutput: Mo
     return {
         createOutput: vi.fn(),
         addTracks: vi.fn().mockReturnValue({ sources: [], errorPromises: [] }),
-        createAudioTrackOutput: vi.fn(
-            (): OutputHandle => ({
-                output: {
-                    start: vi.fn().mockResolvedValue(undefined),
-                    finalize: vi.fn().mockResolvedValue(undefined),
-                    cancel: vi.fn().mockResolvedValue(undefined),
-                    addAudioTrack: vi.fn(),
-                    state: 'idle',
-                } as unknown as import('mediabunny').Output,
-                sources: [],
-                errorPromises: [Promise.resolve()],
-            }),
-        ),
+        createAudioTrackOutput: vi.fn((): OutputHandle => ({
+            output: {
+                start: vi.fn().mockResolvedValue(undefined),
+                finalize: vi.fn().mockResolvedValue(undefined),
+                cancel: vi.fn().mockResolvedValue(undefined),
+                addAudioTrack: vi.fn(),
+                state: 'idle',
+            } as unknown as import('mediabunny').Output,
+            sources: [],
+            errorPromises: [Promise.resolve()],
+        })),
     } as unknown as OutputManager & { createAudioTrackOutput: Mock }
 }
 
