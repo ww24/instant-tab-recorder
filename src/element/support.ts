@@ -36,6 +36,15 @@ export class Support extends LitElement {
             md-switch {
                 margin-bottom: 1em;
             }
+            .legal-buttons {
+                display: flex;
+                gap: 12px;
+                flex-wrap: wrap;
+                margin-bottom: 1em;
+            }
+            .legal-buttons md-filled-tonal-button {
+                margin-bottom: 0;
+            }
             .feedback-form {
                 display: flex;
                 flex-direction: column;
@@ -145,6 +154,26 @@ export class Support extends LitElement {
                 ${t('supportOpenSourceLicenses')}
                 <md-icon slot="icon">description</md-icon>
             </md-filled-tonal-button>
+
+            <h2>${t('supportTerms')}</h2>
+            <div class="legal-buttons">
+                <md-filled-tonal-button
+                    href=${t('termsUrl')}
+                    target="_blank"
+                    rel="noopener"
+                    @click=${this.handleTermsLink}>
+                    ${t('termsLinkText')}
+                    <md-icon slot="icon">description</md-icon>
+                </md-filled-tonal-button>
+                <md-filled-tonal-button
+                    href=${t('privacyPolicyUrl')}
+                    target="_blank"
+                    rel="noopener"
+                    @click=${this.handlePrivacyPolicyLink}>
+                    ${t('privacyPolicyLinkText')}
+                    <md-icon slot="icon">policy</md-icon>
+                </md-filled-tonal-button>
+            </div>
 
             <h2>${t('supportReview')}</h2>
             <div class="review-section">
@@ -281,6 +310,14 @@ export class Support extends LitElement {
 
     private handleReviewLink() {
         sendEvent({ type: 'click_external_link', tags: { link: 'review' } })
+    }
+
+    private handleTermsLink() {
+        sendEvent({ type: 'click_external_link', tags: { link: 'terms' } })
+    }
+
+    private handlePrivacyPolicyLink() {
+        sendEvent({ type: 'click_external_link', tags: { link: 'privacy' } })
     }
 
     private async handleShowLicenses() {

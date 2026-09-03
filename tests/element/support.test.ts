@@ -112,6 +112,36 @@ describe('extension-support', () => {
         expect(supportHeading).not.toBeUndefined()
     })
 
+    test('renders legal section with Terms of Service and Privacy Policy buttons', async () => {
+        const screen = render(html`<extension-support></extension-support>`)
+        const el = screen.container.querySelector('extension-support')!
+        await elementUpdated(el)
+
+        const headings = shadowQueryAll(el, 'h2')
+        const legalHeading = headings.find(h => h.textContent?.trim() === 'Legal')
+        expect(legalHeading).not.toBeUndefined()
+
+        // Legal heading should appear after License Information and before Review
+        const headingTexts = headings.map(h => h.textContent?.trim())
+        const licenseIdx = headingTexts.indexOf('License Information')
+        const legalIdx = headingTexts.indexOf('Legal')
+        const reviewIdx = headingTexts.indexOf('Review')
+        expect(licenseIdx).toBeLessThan(legalIdx)
+        expect(legalIdx).toBeLessThan(reviewIdx)
+
+        const termsBtn = shadowQuery(el, '.legal-buttons md-filled-tonal-button[href*="TERMS.html"]')
+        expect(termsBtn).not.toBeNull()
+        expect(termsBtn?.textContent?.trim()).toContain('Terms of Service')
+        expect(termsBtn?.getAttribute('target')).toBe('_blank')
+        expect(termsBtn?.getAttribute('rel')).toBe('noopener')
+
+        const privacyBtn = shadowQuery(el, '.legal-buttons md-filled-tonal-button[href*="PRIVACY.html"]')
+        expect(privacyBtn).not.toBeNull()
+        expect(privacyBtn?.textContent?.trim()).toContain('Privacy Policy')
+        expect(privacyBtn?.getAttribute('target')).toBe('_blank')
+        expect(privacyBtn?.getAttribute('rel')).toBe('noopener')
+    })
+
     describe('open source licenses button', () => {
         let alertEl: HTMLElement
 

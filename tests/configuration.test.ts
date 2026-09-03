@@ -375,3 +375,24 @@ describe('Configuration.recordingTimer', () => {
         expect(restored.recordingTimer).toEqual({ enabled: false, durationMinutes: 30, skipStopConfirmation: false })
     })
 })
+
+describe('Configuration.hasAgreedTerms', () => {
+    it('should default to false for new configurations', () => {
+        const config = new Configuration()
+        expect(config.hasAgreedTerms).toBe(false)
+    })
+
+    it('should include hasAgreedTerms in filterForSync', () => {
+        const config = new Configuration()
+        config.hasAgreedTerms = true
+        const synced = Configuration.filterForSync(config)
+        expect(synced.hasAgreedTerms).toBe(true)
+    })
+
+    it('should preserve hasAgreedTerms on restoreDefault', () => {
+        const config = new Configuration()
+        config.hasAgreedTerms = true
+        const restored = Configuration.restoreDefault(config)
+        expect(restored.hasAgreedTerms).toBe(true)
+    })
+})

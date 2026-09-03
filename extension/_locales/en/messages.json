@@ -790,5 +790,43 @@
     "settingsMicPermissionRequired": {
         "message": "Microphone permission is required for recording.\nPlease allow access when prompted.",
         "description": "Error message when microphone permission is denied"
+    },
+    "termsHeadline": {
+        "message": "Terms of Service",
+        "description": "Terms dialog headline"
+    },
+    "termsDescription": {
+        "message": "By continuing to use this extension, you agree to the $LINK$.",
+        "description": "Terms agreement description",
+        "placeholders": {
+            "link": {
+                "content": "$1",
+                "example": "Terms of Service"
+            }
+        }
+    },
+    "termsLinkText": {
+        "message": "Terms of Service",
+        "description": "Terms link text"
+    },
+    "termsUrl": {
+        "message": "https://recorder.appcloud.info/TERMS.html",
+        "description": "URL for terms of service"
+    },
+    "termsOkButton": {
+        "message": "OK",
+        "description": "OK button to accept terms"
+    },
+    "supportTerms": {
+        "message": "Legal",
+        "description": "Heading for terms and privacy section"
+    },
+    "privacyPolicyLinkText": {
+        "message": "Privacy Policy",
+        "description": "Privacy policy link text"
+    },
+    "privacyPolicyUrl": {
+        "message": "https://recorder.appcloud.info/PRIVACY.html",
+        "description": "URL for privacy policy"
     }
 }

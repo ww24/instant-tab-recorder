@@ -37,7 +37,7 @@ const DEFAULT_TITLE = t('actionDefaultTitle')
 const CONTEXT_MENU_ID = 'start-recording'
 const CONTEXT_MENU_PAUSE_ID = 'pause-recording'
 
-chrome.runtime.onInstalled.addListener(async () => {
+chrome.runtime.onInstalled.addListener(async details => {
     await createOffscreenDocument()
 
     const defaultConfig = new Configuration()
@@ -110,6 +110,10 @@ chrome.runtime.onInstalled.addListener(async () => {
         contexts: ['page'],
         visible: false,
     })
+
+    if (details.reason === 'install') {
+        await chrome.runtime.openOptionsPage()
+    }
 })
 
 async function getOffscreenDocument(): Promise<chrome.runtime.ExtensionContext | undefined> {

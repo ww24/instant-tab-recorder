@@ -12,6 +12,11 @@ export type Event =
     | ClickExternalLinkEvent
     | MigrationStartEvent
     | MigrationEndEvent
+    | AgreeTermsEvent
+
+export interface AgreeTermsEvent {
+    type: 'agree_terms'
+}
 
 export interface StartRecordingEvent {
     type: 'start_recording'
