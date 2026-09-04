@@ -27,6 +27,14 @@ function createMockDeps(overrides: Partial<ServiceWorkerDeps> = {}): ServiceWork
         resizeWindow: vi.fn().mockResolvedValue(undefined),
         storageSyncSet: vi.fn().mockResolvedValue(undefined),
         claimClients: vi.fn().mockResolvedValue(undefined),
+        ensureOffscreenDocument: vi.fn().mockResolvedValue(undefined),
+        maybeCloseOffscreenDocument: vi.fn().mockResolvedValue(undefined),
+        getActiveTranscribingRecordedAt: vi.fn().mockReturnValue(null),
+        setActiveTranscribingRecordedAt: vi.fn().mockResolvedValue(undefined),
+        setDownloadingModel: vi.fn(),
+        sendRuntimeMessage: vi.fn().mockResolvedValue(undefined),
+        checkWhisperModel: vi.fn().mockResolvedValue({ hasModel: true, sizeBytes: 1500000000 }),
+        deleteWhisperModel: vi.fn().mockResolvedValue(undefined),
         ...overrides,
     }
 }
@@ -325,5 +333,101 @@ describe('createMessageListener', () => {
             expect(onError).toHaveBeenCalledWith(error)
         })
         expect(sendResponse).not.toHaveBeenCalled()
+    })
+})
+
+// ---------- transcription handlers ----------
+
+describe('transcription handlers', () => {
+    it('handles start-transcription by opening offscreen, broadcasting started, and forwarding message', async () => {
+        const deps = createMockDeps()
+        const msg = { type: 'start-transcription' as const, recordedAt: 12345 }
+        const result = handleMessage(msg, deps)
+        expect(result!.fireAndForget).toBe(false)
+        const response = await result!.response
+        expect(response).toEqual({ ok: true })
+        expect(deps.setActiveTranscribingRecordedAt).toHaveBeenCalledWith(12345)
+        expect(deps.ensureOffscreenDocument).toHaveBeenCalled()
+        expect(deps.sendRuntimeMessage).toHaveBeenCalledWith({
+            type: 'transcription-started',
+            recordedAt: 12345,
+        })
+        expect(deps.sendRuntimeMessage).toHaveBeenCalledWith({ ...msg, target: 'offscreen' })
+    })
+
+    it('rejects concurrent start-transcription request when another transcription is active', async () => {
+        const deps = createMockDeps({
+            getActiveTranscribingRecordedAt: vi.fn().mockReturnValue(11111),
+        })
+        const msg = { type: 'start-transcription' as const, recordedAt: 22222 }
+        const result = handleMessage(msg, deps)
+        expect(result!.fireAndForget).toBe(false)
+        const response = await result!.response
+        expect(response).toEqual({
+            ok: false,
+            error: 'Another transcription is already in progress.',
+        })
+        expect(deps.setActiveTranscribingRecordedAt).not.toHaveBeenCalled()
+        expect(deps.ensureOffscreenDocument).not.toHaveBeenCalled()
+    })
+
+    it('handles transcription-complete by resetting flag and closing offscreen', async () => {
+        const deps = createMockDeps()
+        const msg = {
+            type: 'transcription-complete' as const,
+            recordedAt: 12345,
+            result: { text: 'test', segments: [], language: 'japanese' },
+        }
+        const result = handleMessage(msg, deps)
+        expect(result!.fireAndForget).toBe(true)
+        await result!.response
+        expect(deps.setActiveTranscribingRecordedAt).toHaveBeenCalledWith(null)
+        expect(deps.maybeCloseOffscreenDocument).toHaveBeenCalled()
+    })
+
+    it('handles transcription-error by resetting flag and closing offscreen', async () => {
+        const deps = createMockDeps()
+        const msg = {
+            type: 'transcription-error' as const,
+            recordedAt: 12345,
+            error: 'Some error',
+        }
+        const result = handleMessage(msg, deps)
+        expect(result!.fireAndForget).toBe(true)
+        await result!.response
+        expect(deps.setActiveTranscribingRecordedAt).toHaveBeenCalledWith(null)
+        expect(deps.maybeCloseOffscreenDocument).toHaveBeenCalled()
+    })
+
+    it('handles download-whisper-model by opening offscreen and forwarding message', async () => {
+        const deps = createMockDeps()
+        const msg = { type: 'download-whisper-model' as const }
+        const result = handleMessage(msg, deps)
+        expect(result!.fireAndForget).toBe(true)
+        await result!.response
+        expect(deps.setDownloadingModel).toHaveBeenCalledWith(true)
+        expect(deps.ensureOffscreenDocument).toHaveBeenCalled()
+        expect(deps.sendRuntimeMessage).toHaveBeenCalledWith({ ...msg, target: 'offscreen' })
+    })
+
+    it('handles check-whisper-model by delegating to checkWhisperModel', async () => {
+        const deps = createMockDeps({
+            checkWhisperModel: vi.fn().mockResolvedValue({ hasModel: true, sizeBytes: 1500 }),
+        })
+        const msg = { type: 'check-whisper-model' as const }
+        const result = handleMessage(msg, deps)
+        expect(result!.fireAndForget).toBe(false)
+        const response = await result!.response
+        expect(deps.checkWhisperModel).toHaveBeenCalled()
+        expect(response).toEqual({ hasModel: true, sizeBytes: 1500 })
+    })
+
+    it('handles delete-whisper-model by delegating to deleteWhisperModel', async () => {
+        const deps = createMockDeps()
+        const msg = { type: 'delete-whisper-model' as const }
+        const result = handleMessage(msg, deps)
+        expect(result!.fireAndForget).toBe(true)
+        await result!.response
+        expect(deps.deleteWhisperModel).toHaveBeenCalled()
     })
 })

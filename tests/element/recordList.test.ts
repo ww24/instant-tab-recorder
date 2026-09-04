@@ -2,7 +2,7 @@ import { render } from 'vitest-browser-lit'
 import { html } from 'lit'
 import { describe, test, expect, vi, beforeEach } from 'vitest'
 import { shadowQuery, elementUpdated } from './test-helpers'
-import { getChromeMock, getMessageListenersCount, simulateChromeMessage } from './test-setup'
+import { getChromeMock, getMessageListenersCount, simulateChromeMessage, simulateStorageChange } from './test-setup'
 import '../../src/element/recordList'
 import '../../src/element/alert'
 import type { RecordingMetadata } from '../../src/storage'
@@ -662,6 +662,104 @@ describe('record-list fetch error', () => {
         await vi.waitFor(() => {
             const listItem = shadowQuery(el, 'md-list md-list-item')
             expect(listItem?.textContent?.trim()).toBe('no entry')
+        })
+    })
+
+    test('transcribe button exclusive execution and multi-tab synchronization', async () => {
+        const recordA: RecordingMetadata = {
+            title: 'video-1000.webm',
+            path: 'video-1000.webm',
+            size: 1024,
+            lastModified: 1000,
+            mimeType: 'video/webm',
+            recordedAt: 1000,
+            isRecording: false,
+            isTemporary: false,
+        }
+        const recordB: RecordingMetadata = {
+            title: 'video-2000.webm',
+            path: 'video-2000.webm',
+            size: 2048,
+            lastModified: 2000,
+            mimeType: 'video/webm',
+            recordedAt: 2000,
+            isRecording: false,
+            isTemporary: false,
+        }
+        listRecordingsMock.mockResolvedValue([recordA, recordB])
+
+        const screen = render(html`<record-list></record-list>`)
+        const el = screen.container.querySelector('record-list')!
+        ;(el as any).transcriptionEnabled = true
+        await elementUpdated(el)
+
+        await vi.waitFor(() => {
+            const chips = el.shadowRoot?.querySelectorAll('.transcribe-action md-assist-chip')
+            expect(chips?.length).toBe(2)
+            expect(chips![0].hasAttribute('disabled')).toBe(false)
+            expect(chips![1].hasAttribute('disabled')).toBe(false)
+        })
+
+        // Simulate transcription starting on record A via message (received from another tab / background)
+        simulateChromeMessage({
+            type: 'transcription-started',
+            recordedAt: 1000,
+        })
+        await elementUpdated(el)
+
+        // Record B's transcribe button must be disabled, and Record A should show transcribing status
+        await vi.waitFor(() => {
+            const chips = el.shadowRoot?.querySelectorAll('.transcribe-action md-assist-chip')
+            expect(chips?.length).toBe(1) // Record A now shows status instead of chip
+            expect(chips![0].hasAttribute('disabled')).toBe(true)
+        })
+
+        // Complete transcription on record A
+        simulateChromeMessage({
+            type: 'transcription-complete',
+            recordedAt: 1000,
+            result: { text: '', segments: [] },
+        })
+        await elementUpdated(el)
+
+        // Both transcribe buttons must now be enabled again
+        await vi.waitFor(() => {
+            const chips = el.shadowRoot?.querySelectorAll('.transcribe-action md-assist-chip')
+            expect(chips?.length).toBe(2)
+            expect(chips![0].hasAttribute('disabled')).toBe(false)
+            expect(chips![1].hasAttribute('disabled')).toBe(false)
+        })
+
+        // Simulate storage change (e.g. from a background worker or another tab writing activeTranscription for record B)
+        simulateStorageChange({
+            activeTranscription: {
+                newValue: { recordedAt: 2000 },
+                oldValue: undefined,
+            },
+        })
+        await elementUpdated(el)
+
+        await vi.waitFor(() => {
+            // Record B is now transcribing (shows status), Record A's chip is disabled
+            const chips = el.shadowRoot?.querySelectorAll('.transcribe-action md-assist-chip')
+            expect(chips?.length).toBe(1)
+            expect(chips![0].hasAttribute('disabled')).toBe(true)
+        })
+
+        // Simulate storage clear
+        simulateStorageChange({
+            activeTranscription: {
+                newValue: undefined,
+                oldValue: { recordedAt: 2000 },
+            },
+        })
+        await elementUpdated(el)
+
+        await vi.waitFor(() => {
+            const chips = el.shadowRoot?.querySelectorAll('.transcribe-action md-assist-chip')
+            expect(chips?.length).toBe(2)
+            expect(chips![0].hasAttribute('disabled')).toBe(false)
+            expect(chips![1].hasAttribute('disabled')).toBe(false)
         })
     })
 })

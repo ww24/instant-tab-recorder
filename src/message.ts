@@ -1,5 +1,6 @@
 import type { Resolution, Configuration, SyncConfiguration, CropRegion, VideoRecordingMode } from './configuration'
 import type { RecordingState } from './handler'
+import type { TranscriptionResult, DownloadProgress } from './transcription/types'
 
 export const TIMER_STOP_CONFIRM_PENDING_KEY = 'timerStopConfirmPending'
 export const TIMER_STOP_TRIGGER_KEY = 'timerStopTrigger'
@@ -29,6 +30,16 @@ export type Message =
     | ConfirmTimerStopMessage
     | UpdateRecordingTimerMessage
     | ClaimClientsMessage
+    | StartTranscriptionMessage
+    | TranscriptionStartedMessage
+    | TranscriptionProgressMessage
+    | TranscriptionCompleteMessage
+    | TranscriptionErrorMessage
+    | DownloadWhisperModelMessage
+    | WhisperModelDownloadProgressMessage
+    | WhisperModelDownloadCompleteMessage
+    | DeleteWhisperModelMessage
+    | CheckWhisperModelMessage
 
 export interface ExceptionMessage {
     type: 'exception'
@@ -171,4 +182,83 @@ export interface UpdateRecordingTimerMessage {
 // Request service worker to claim clients (option page → service_worker)
 export interface ClaimClientsMessage {
     type: 'claim-clients'
+}
+
+// Start transcription request (option page → service_worker → offscreen)
+export interface StartTranscriptionMessage {
+    type: 'start-transcription'
+    recordedAt: number
+    target?: 'offscreen'
+}
+
+export interface StartTranscriptionResponse {
+    ok: boolean
+    error?: string
+}
+
+// Broadcast that transcription has started (service_worker → option page)
+export interface TranscriptionStartedMessage {
+    type: 'transcription-started'
+    recordedAt: number
+}
+
+export type TranscriptionPhase = 'model-loading' | 'model-initializing' | 'audio-extracting' | 'transcribing'
+
+// Transcription progress notification (offscreen → service_worker → option page)
+export interface TranscriptionProgressMessage {
+    type: 'transcription-progress'
+    recordedAt: number
+    phase?: TranscriptionPhase
+    percent?: number
+    detail?: string
+    status: string
+    progress?: number
+}
+
+// Transcription completed notification (offscreen → service_worker → option page)
+export interface TranscriptionCompleteMessage {
+    type: 'transcription-complete'
+    recordedAt: number
+    result: TranscriptionResult
+}
+
+// Transcription error notification (offscreen → service_worker → option page)
+export interface TranscriptionErrorMessage {
+    type: 'transcription-error'
+    recordedAt: number
+    error: string
+}
+
+// Request to download Whisper model into OPFS (option page → service_worker → offscreen)
+export interface DownloadWhisperModelMessage {
+    type: 'download-whisper-model'
+    target?: 'offscreen'
+}
+
+// Whisper model download progress (offscreen → service_worker → option page)
+export interface WhisperModelDownloadProgressMessage {
+    type: 'whisper-model-download-progress'
+    data: DownloadProgress
+}
+
+// Whisper model download completed (offscreen → service_worker → option page)
+export interface WhisperModelDownloadCompleteMessage {
+    type: 'whisper-model-download-complete'
+    success: boolean
+    error?: string
+}
+
+// Delete cached Whisper model from OPFS (option page → service_worker → offscreen)
+export interface DeleteWhisperModelMessage {
+    type: 'delete-whisper-model'
+}
+
+// Check if Whisper model exists in OPFS (option page → service_worker → offscreen)
+export interface CheckWhisperModelMessage {
+    type: 'check-whisper-model'
+}
+
+export interface CheckWhisperModelResponse {
+    hasModel: boolean
+    sizeBytes: number
 }

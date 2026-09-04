@@ -1,4 +1,4 @@
-import type { Message, Trigger } from './message'
+import type { Message, Trigger, CheckWhisperModelResponse, StartTranscriptionResponse } from './message'
 import { Configuration, type Resolution } from './configuration'
 import type { RecordingState } from './handler'
 import { deepMerge } from './element/util'
@@ -17,10 +17,18 @@ export interface ServiceWorkerDeps {
     resizeWindow: (resolution: Resolution) => Promise<void>
     storageSyncSet: (key: string, value: object) => Promise<void>
     claimClients: () => Promise<void>
+    ensureOffscreenDocument: () => Promise<void>
+    maybeCloseOffscreenDocument: () => Promise<void>
+    getActiveTranscribingRecordedAt: () => number | null
+    setActiveTranscribingRecordedAt: (recordedAt: number | null) => Promise<void>
+    setDownloadingModel: (downloading: boolean) => void
+    sendRuntimeMessage: (msg: Message) => Promise<unknown>
+    checkWhisperModel: () => Promise<CheckWhisperModelResponse>
+    deleteWhisperModel: () => Promise<void>
 }
 
 export type HandleMessageResult = {
-    response: Promise<Configuration | void>
+    response: Promise<Configuration | CheckWhisperModelResponse | StartTranscriptionResponse | void>
     fireAndForget: boolean
 }
 
@@ -48,6 +56,19 @@ export function handleMessage(message: Message, deps: ServiceWorkerDeps): Handle
             return { response: handleRequestRecordingState(deps), fireAndForget: true }
         case 'claim-clients':
             return { response: deps.claimClients(), fireAndForget: false }
+        case 'start-transcription':
+            return { response: handleStartTranscription(message, deps), fireAndForget: false }
+        case 'transcription-complete':
+        case 'transcription-error':
+            return { response: handleTranscriptionEnded(deps), fireAndForget: true }
+        case 'download-whisper-model':
+            return { response: handleDownloadWhisperModel(message, deps), fireAndForget: true }
+        case 'whisper-model-download-complete':
+            return { response: handleModelDownloadComplete(deps), fireAndForget: true }
+        case 'check-whisper-model':
+            return { response: deps.checkWhisperModel(), fireAndForget: false }
+        case 'delete-whisper-model':
+            return { response: deps.deleteWhisperModel(), fireAndForget: true }
     }
     return null
 }
@@ -98,6 +119,44 @@ async function handleRequestRecordingState(deps: ServiceWorkerDeps): Promise<voi
     await deps.broadcastRecordingState()
 }
 
+async function handleStartTranscription(
+    message: Extract<Message, { type: 'start-transcription' }>,
+    deps: ServiceWorkerDeps,
+): Promise<StartTranscriptionResponse> {
+    const active = deps.getActiveTranscribingRecordedAt()
+    if (active != null) {
+        return { ok: false, error: 'Another transcription is already in progress.' }
+    }
+    await deps.setActiveTranscribingRecordedAt(message.recordedAt)
+    await deps.ensureOffscreenDocument()
+    // Broadcast started message to all option pages so buttons are disabled synchronously
+    await deps.sendRuntimeMessage({
+        type: 'transcription-started',
+        recordedAt: message.recordedAt,
+    })
+    await deps.sendRuntimeMessage({ ...message, target: 'offscreen' })
+    return { ok: true }
+}
+
+async function handleTranscriptionEnded(deps: ServiceWorkerDeps): Promise<void> {
+    await deps.setActiveTranscribingRecordedAt(null)
+    await deps.maybeCloseOffscreenDocument()
+}
+
+async function handleDownloadWhisperModel(
+    message: Extract<Message, { type: 'download-whisper-model' }>,
+    deps: ServiceWorkerDeps,
+): Promise<void> {
+    deps.setDownloadingModel(true)
+    await deps.ensureOffscreenDocument()
+    await deps.sendRuntimeMessage({ ...message, target: 'offscreen' })
+}
+
+async function handleModelDownloadComplete(deps: ServiceWorkerDeps): Promise<void> {
+    deps.setDownloadingModel(false)
+    await deps.maybeCloseOffscreenDocument()
+}
+
 /**
  * Creates the chrome.runtime.onMessage listener callback.
  * Extracted for testability.
@@ -108,7 +167,7 @@ export function createMessageListener(
 ): (
     message: Message,
     sender: chrome.runtime.MessageSender,
-    sendResponse: (response?: Configuration) => void,
+    sendResponse: (response?: Configuration | CheckWhisperModelResponse | StartTranscriptionResponse) => void,
 ) => boolean | undefined {
     return (message, _sender, sendResponse) => {
         const result = handleMessage(message, deps)
@@ -122,8 +181,8 @@ export function createMessageListener(
         }
 
         result.response
-            .then(config => {
-                if (config != null) sendResponse(config)
+            .then(res => {
+                if (res != null) sendResponse(res)
                 else sendResponse()
             })
             .catch(e => {

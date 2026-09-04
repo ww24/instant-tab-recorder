@@ -93,6 +93,9 @@ function createMockDeps(overrides: Partial<OffscreenDeps> = {}): OffscreenDeps {
         setLocationHash: vi.fn(),
         recordingDB: createMockRecordingDB(),
         getVideoFile: vi.fn().mockResolvedValue(defaultVideoFile),
+        saveVttFile: vi.fn().mockResolvedValue(undefined),
+        checkWhisperModel: vi.fn().mockResolvedValue({ hasModel: true, sizeBytes: 1500000000 }),
+        deleteWhisperModel: vi.fn().mockResolvedValue(undefined),
         ...overrides,
     }
 }
@@ -901,5 +904,39 @@ describe('pause/resume timer coordination', () => {
         await Promise.resolve()
 
         expect(deps.sendRuntimeMessage).toHaveBeenCalledWith({ type: 'timer-expired' })
+    })
+})
+
+// ---------- transcription ----------
+
+describe('transcription', () => {
+    it('ignores start-transcription when target is not offscreen', async () => {
+        const deps = createMockDeps()
+        const handler = new OffscreenHandler(deps)
+        const result = handler.handleMessage({
+            type: 'start-transcription',
+            recordedAt: 12345,
+        })
+        expect(result).toBeNull()
+    })
+
+    it('rejects concurrent transcription when one is already active', async () => {
+        const deps = createMockDeps()
+        const handler = new OffscreenHandler(deps)
+
+        // Set active transcription on the handler directly to simulate ongoing transcription
+        ;(handler as any).activeTranscriptionRecordedAt = 1000
+
+        await handler.handleMessage({
+            type: 'start-transcription',
+            recordedAt: 2000,
+            target: 'offscreen',
+        })
+
+        expect(deps.sendRuntimeMessage).toHaveBeenCalledWith({
+            type: 'transcription-error',
+            recordedAt: 2000,
+            error: 'Another transcription is already running in offscreen document.',
+        })
     })
 })

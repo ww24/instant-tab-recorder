@@ -13,6 +13,8 @@ export type Event =
     | MigrationStartEvent
     | MigrationEndEvent
     | AgreeTermsEvent
+    | TranscriptionStartEvent
+    | TranscriptionEndEvent
 
 export interface AgreeTermsEvent {
     type: 'agree_terms'
@@ -67,6 +69,34 @@ export interface MigrationEndEvent {
     type: 'migration_end'
     metrics: {
         inserted: number
+        durationMs: number
+    }
+}
+
+export interface TranscriptionStartEvent {
+    type: 'transcription_start'
+    tags: {
+        language: string
+        device: 'webgpu' | 'wasm'
+    }
+    metrics: {
+        recording: {
+            durationSec: number
+        }
+    }
+}
+
+export interface TranscriptionEndEvent {
+    type: 'transcription_end'
+    tags: {
+        language: string
+        device: 'webgpu' | 'wasm'
+        success: boolean
+    }
+    metrics: {
+        recording: {
+            durationSec: number
+        }
         durationMs: number
     }
 }

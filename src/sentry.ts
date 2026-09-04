@@ -89,6 +89,9 @@ const METRICS = {
     FILESIZE: 'recording.filesize',
     EXTERNAL_LINK: 'external_link.click',
     AGREE_TERMS: 'terms.agree',
+    TRANSCRIPTION_START: 'transcription.start',
+    TRANSCRIPTION_DURATION: 'transcription.duration',
+    TRANSCRIPTION_RECORDING_DURATION: 'transcription.recording_duration',
 }
 
 export function sendEvent(e: Event) {
@@ -151,6 +154,30 @@ export function sendEvent(e: Event) {
         case 'agree_terms':
             metrics.count(METRICS.AGREE_TERMS, 1, { scope })
             logger.info(e.type, {}, { scope })
+            break
+
+        case 'transcription_start':
+            metrics.count(METRICS.TRANSCRIPTION_START, 1, {
+                scope,
+                attributes: { ...flatten(e.tags) },
+            })
+            metrics.distribution(METRICS.TRANSCRIPTION_RECORDING_DURATION, e.metrics.recording.durationSec, {
+                scope,
+                unit: 'second',
+            })
+            logger.info(e.type, { ...flatten(e.tags), ...flatten(e.metrics) }, { scope })
+            break
+
+        case 'transcription_end':
+            metrics.distribution(METRICS.TRANSCRIPTION_DURATION, e.metrics.durationMs, {
+                scope,
+                unit: 'millisecond',
+            })
+            metrics.distribution(METRICS.TRANSCRIPTION_RECORDING_DURATION, e.metrics.recording.durationSec, {
+                scope,
+                unit: 'second',
+            })
+            logger.info(e.type, { ...flatten(e.tags), ...flatten(e.metrics) }, { scope })
             break
     }
 }

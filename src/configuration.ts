@@ -234,6 +234,28 @@ export interface RecordingTimer {
     durationMinutes: number
     skipStopConfirmation: boolean
 }
+export interface TranscriptionConfig {
+    enabled: boolean
+    language: string
+}
+export function resolveDefaultTranscriptionLanguage(): string {
+    const uiLang =
+        typeof chrome !== 'undefined' && chrome.i18n?.getUILanguage
+            ? chrome.i18n.getUILanguage().toLowerCase()
+            : typeof navigator !== 'undefined'
+              ? navigator.language.toLowerCase()
+              : 'en'
+    if (uiLang.startsWith('ja')) return 'japanese'
+    if (uiLang.startsWith('zh')) return 'chinese'
+    if (uiLang.startsWith('ko')) return 'korean'
+    if (uiLang.startsWith('es')) return 'spanish'
+    if (uiLang.startsWith('fr')) return 'french'
+    if (uiLang.startsWith('de')) return 'german'
+    if (uiLang.startsWith('it')) return 'italian'
+    if (uiLang.startsWith('pt')) return 'portuguese'
+    if (uiLang.startsWith('ru')) return 'russian'
+    return 'english'
+}
 export interface RecordingInfo {
     videoFormat: VideoFormat
     recordingSize: Resolution
@@ -298,6 +320,7 @@ export type ConfigurationReport = Pick<
     | 'recordingSortOrder'
     | 'audioSeparation'
     | 'uiTheme'
+    | 'transcription'
 > & { videoFormat: VideoFormatReport } & { microphone: Omit<Microphone, 'deviceId'> } & {
     cropping: Pick<CroppingConfig, 'enabled'> & { region: Pick<CropRegion, 'width' | 'height'> }
 } & { recordingTimer: RecordingTimerReport }
@@ -319,6 +342,7 @@ export class Configuration {
     recordingTimer: RecordingTimer
     uiTheme: UITheme
     hasAgreedTerms: boolean
+    transcription: TranscriptionConfig
     constructor() {
         this.windowSize = {
             width: 1920,
@@ -372,6 +396,10 @@ export class Configuration {
         }
         this.uiTheme = 'auto'
         this.hasAgreedTerms = false
+        this.transcription = {
+            enabled: false,
+            language: resolveDefaultTranscriptionLanguage(),
+        }
     }
     static restoreDefault({ userId, hasAgreedTerms }: Configuration): Configuration {
         const config = new Configuration()
@@ -407,6 +435,7 @@ export class Configuration {
             recordingSortOrder,
             audioSeparation,
             uiTheme,
+            transcription,
         } = config
         return {
             windowSize,
@@ -423,6 +452,7 @@ export class Configuration {
             audioSeparation,
             recordingTimer,
             uiTheme,
+            transcription,
         }
     }
     static screenRecordingSize(screenRecordingSize: ScreenRecordingSize, base: Resolution): Resolution {

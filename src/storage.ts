@@ -25,6 +25,8 @@ export interface RecordingMetadata {
     subFilesSize?: number
     /** Thumbnail file name for API fetch, present only when thumbnail exists (e.g. "video-1234-thumbnail.webp") */
     thumbnailFileName?: string
+    /** Transcript file path for WebVTT subtitles, if transcription has been completed */
+    transcriptFilePath?: string
 }
 
 /**

@@ -28,9 +28,15 @@
     ],
     "options_page": "option.html",
     "content_security_policy": {
-        "extension_pages": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'unsafe-inline'; connect-src https://*.sentry.io/ 'self';",
+        "extension_pages": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'unsafe-inline'; connect-src https://*.sentry.io/ https://huggingface.co https://cdn-lfs.huggingface.co https://us.aws.cdn.hf.co 'self';",
         "sandbox": "sandbox allow-scripts allow-forms allow-popups allow-modals; script-src 'self' 'unsafe-inline' 'unsafe-eval'; child-src 'self';"
     },
+    "web_accessible_resources": [
+        {
+            "resources": ["models/*", "dist/*"],
+            "matches": ["<all_urls>"]
+        }
+    ],
     "commands": {
         "start-recording": {
             "description": "__MSG_commandStartRecording__"

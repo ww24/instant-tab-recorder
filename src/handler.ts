@@ -12,6 +12,7 @@ import { getMimeTypeFromExtension } from './mime'
 import { parseRangeHeader, resolveByteRange, generateBoundary, buildMultipartByteRangesBody } from './range'
 import type { ResolvedRange } from './range'
 import type { Resolution, VideoRecordingMode } from './configuration'
+import { vttToSrt } from './transcription/vtt'
 
 const API_PREFIX = '/api/'
 
@@ -184,6 +185,7 @@ export async function handleApiRequest(
                             status,
                             subFiles: r.subFiles,
                             subFilesSize,
+                            transcriptFilePath: r.transcriptFilePath,
                             ...(thumbnailFileName ? { thumbnailFileName } : {}),
                         }
                     }),
@@ -247,11 +249,16 @@ export async function handleApiRequest(
                                 { status: 409 },
                             )
                         }
-                        // Delete sub-files and main file from OPFS (idempotent)
-                        await Promise.all([
+                        // Delete sub-files, transcript, and main file from OPFS (idempotent)
+                        const filesToDelete = [
                             ...record.subFiles.map(sub => storage.delete(sub.path)),
                             storage.delete(record.mainFilePath),
-                        ])
+                        ]
+                        if (record.transcriptFilePath) {
+                            filesToDelete.push(storage.delete(record.transcriptFilePath))
+                        }
+                        filesToDelete.push(storage.delete(`video-${record.recordedAt}.vtt`))
+                        await Promise.all(filesToDelete)
                         // Delete IndexedDB record
                         await recordingDB.delete(record.recordedAt)
                     } else {
@@ -268,8 +275,17 @@ export async function handleApiRequest(
                     })
                 }
 
-                // GET /api/recordings/:name - return binary file
-                const file = await storage.getFile(name)
+                // GET /api/recordings/:name - return binary file (with dynamic .srt support)
+                let file = await storage.getFile(name)
+                if (!file && name.endsWith('.srt')) {
+                    const vttName = name.replace(/\.srt$/, '.vtt')
+                    const vttFile = await storage.getFile(vttName)
+                    if (vttFile) {
+                        const vttText = await vttFile.text()
+                        const srtText = vttToSrt(vttText)
+                        file = new File([srtText], name, { type: 'application/x-subrip' })
+                    }
+                }
                 if (!file) {
                     // Self-healing: clean up orphaned IndexedDB record
                     const recordedAt = parseRecordedAt(name)

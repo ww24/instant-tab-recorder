@@ -26,6 +26,7 @@
   "author": "ww24",
   "license": "MIT",
   "dependencies": {
+    "@huggingface/transformers": "^4.2.0",
     "@material/web": "^2.5.0",
     "@mediabunny/flac-encoder": "1.51.0",
     "@sentry/browser": "^10.69.0",

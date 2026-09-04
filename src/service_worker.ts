@@ -25,6 +25,7 @@ import { buildRecordingTitle } from './format'
 import { createMessageListener, type ServiceWorkerDeps } from './service_worker_handler'
 import { t } from './i18n'
 import { RecordingDB } from './recording_db'
+import { OPFSCache } from './transcription/opfs_cache'
 
 const recordingIcon = '/icons/recording.png'
 const recordingVideoOnlyIcon = '/icons/recording-video-only.png'
@@ -116,6 +117,13 @@ chrome.runtime.onInstalled.addListener(async details => {
     }
 })
 
+let activeTranscribingRecordedAt: number | null = null
+let isTranscribing = false
+let isDownloadingModel = false
+
+// Clear any stale active transcription lock on service worker startup
+chrome.storage.local.remove('activeTranscription').catch(console.error)
+
 async function getOffscreenDocument(): Promise<chrome.runtime.ExtensionContext | undefined> {
     const existingContexts = await chrome.runtime.getContexts({})
     return existingContexts.find(c => c.contextType === 'OFFSCREEN_DOCUMENT')
@@ -128,9 +136,19 @@ async function createOffscreenDocument() {
     // If an offscreen document is not already open, create one.
     await chrome.offscreen.createDocument({
         url: 'offscreen.html',
-        reasons: [chrome.offscreen.Reason.USER_MEDIA],
-        justification: 'Recording from chrome.tabCapture API',
+        reasons: [chrome.offscreen.Reason.USER_MEDIA, chrome.offscreen.Reason.WORKERS],
+        justification: 'Recording from chrome.tabCapture API and background transcription',
     })
+}
+
+async function maybeCloseOffscreenDocument() {
+    const isRecording = await getIsRecording()
+    if (!isRecording && !isTranscribing && !isDownloadingModel) {
+        const offscreen = await getOffscreenDocument()
+        if (offscreen) {
+            await chrome.offscreen.closeDocument().catch(() => {})
+        }
+    }
 }
 
 async function getIsRecording(): Promise<boolean> {
@@ -322,8 +340,8 @@ async function stopRecording(trigger: Trigger, skipConfirmation = false) {
     const config = await getConfiguration()
     if (config.openOptionPage) await chrome.runtime.openOptionsPage()
 
-    // Close offscreen document
-    await chrome.offscreen.closeDocument()
+    // Close offscreen document if idle
+    await maybeCloseOffscreenDocument()
 }
 
 async function cancelRecording(error: string) {
@@ -340,8 +358,8 @@ async function cancelRecording(error: string) {
     await broadcastRecordingState()
     await updateRecordingIndications()
 
-    // Close offscreen document
-    await chrome.offscreen.closeDocument()
+    // Close offscreen document if idle
+    await maybeCloseOffscreenDocument()
 
     if (error === '') return
     // Open option page to show the error
@@ -466,6 +484,32 @@ const messageHandlerDeps: ServiceWorkerDeps = {
     resizeWindow,
     storageSyncSet: (key, value) => storage.set(key, value),
     claimClients: () => self.clients.claim(),
+    ensureOffscreenDocument: createOffscreenDocument,
+    maybeCloseOffscreenDocument,
+    getActiveTranscribingRecordedAt: () => activeTranscribingRecordedAt,
+    setActiveTranscribingRecordedAt: async (recordedAt: number | null) => {
+        activeTranscribingRecordedAt = recordedAt
+        isTranscribing = recordedAt != null
+        if (recordedAt != null) {
+            await chrome.storage.local.set({ activeTranscription: { recordedAt } })
+        } else {
+            await chrome.storage.local.remove('activeTranscription')
+        }
+    },
+    setDownloadingModel: (v: boolean) => {
+        isDownloadingModel = v
+    },
+    sendRuntimeMessage: (msg: Message) => chrome.runtime.sendMessage(msg),
+    checkWhisperModel: async () => {
+        const cache = new OPFSCache()
+        const hasModel = await cache.hasModel()
+        const sizeBytes = await cache.getTotalSize()
+        return { hasModel, sizeBytes }
+    },
+    deleteWhisperModel: async () => {
+        const cache = new OPFSCache()
+        await cache.clear()
+    },
 }
 
 chrome.runtime.onMessage.addListener(

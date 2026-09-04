@@ -622,5 +622,97 @@
     },
     "privacyPolicyUrl": {
         "message": "https://recorder.appcloud.info/PRIVACY_JA.html"
+    },
+    "settingsExperimental": {
+        "message": "実験的機能"
+    },
+    "settingsEnableTranscription": {
+        "message": "文字起こし"
+    },
+    "settingsEnableTranscriptionTitle": {
+        "message": "録画音声から文字起こしをローカルで生成します"
+    },
+    "settingsTranscriptionLanguage": {
+        "message": "文字起こし言語"
+    },
+    "settingsTranscriptionDownloading": {
+        "message": "モデルダウンロード中..."
+    },
+    "settingsTranscriptionStartingDownload": {
+        "message": "ダウンロードを開始しています..."
+    },
+    "settingsTranscriptionDownloadHeadline": {
+        "message": "文字起こしモデルのダウンロード"
+    },
+    "settingsTranscriptionDownloadDescription": {
+        "message": "文字起こし機能には、Whisper Large v3 Turbo モデル（約1.6GB）のダウンロードが必要です。モデルは端末内に保存され、完全オフラインで動作します。ダウンロードを続行しますか？"
+    },
+    "settingsTranscriptionDownloadConfirm": {
+        "message": "ダウンロード"
+    },
+    "settingsTranscriptionDownloadFailed": {
+        "message": "モデルのダウンロードに失敗しました: $ERROR$",
+        "placeholders": {
+            "error": {
+                "content": "$1"
+            }
+        }
+    },
+    "transcriptionLoadingModel": {
+        "message": "モデルを読み込み中..."
+    },
+    "recordListTranscribe": {
+        "message": "文字起こし"
+    },
+    "recordListTranscriptionStarting": {
+        "message": "文字起こし準備中..."
+    },
+    "recordListTitleTranscribing": {
+        "message": "文字起こし処理中"
+    },
+    "recordListHasSubtitles": {
+        "message": "字幕あり"
+    },
+    "recordListDownloadVtt": {
+        "message": "WebVTT 字幕をダウンロード"
+    },
+    "recordListDownloadSrt": {
+        "message": "SRT 字幕をダウンロード"
+    },
+    "recordListTranscriptionFailed": {
+        "message": "文字起こしに失敗しました"
+    },
+    "recordListTranscribeAlreadyRunning": {
+        "message": "別の文字起こしが実行中のため開始できません"
+    },
+    "transcriptionStatusLoadingModel": {
+        "message": "モデル読み込み中: $PERCENT$%",
+        "placeholders": {
+            "percent": {
+                "content": "$1"
+            }
+        }
+    },
+    "transcriptionStatusInitializingModel": {
+        "message": "モデル初期化中..."
+    },
+    "transcriptionStatusExtractingAudio": {
+        "message": "音声データを抽出中: $PERCENT$%",
+        "placeholders": {
+            "percent": {
+                "content": "$1"
+            }
+        }
+    },
+    "transcriptionStatusTranscribing": {
+        "message": "文字起こし中..."
+    },
+    "transcriptionStatusTranscribingRange": {
+        "message": "文字起こし中: $RANGE$",
+        "placeholders": {
+            "range": {
+                "content": "$1"
+            }
+        }
     }
 }

@@ -270,4 +270,50 @@ describe('extension-settings', () => {
         const switchRows = shadowQueryAll(el, '.switch-label')
         expect(switchRows.length).toBeGreaterThanOrEqual(7)
     })
+
+    test('opens download dialog when transcription toggled on without model, and can reopen after cancel', async () => {
+        const screen = render(html`<extension-settings></extension-settings>`)
+        const el = screen.container.querySelector('extension-settings')!
+        await elementUpdated(el)
+
+        const switchEl = shadowQuery(el, '#transcription-switch') as unknown as { selected: boolean; click: () => void }
+        expect(switchEl).not.toBeNull()
+        expect(switchEl.selected).toBe(false)
+
+        const dialog = shadowQuery(el, '#download-confirm-dialog') as unknown as {
+            open: boolean
+            show: () => void
+            close: (returnValue?: string) => void
+            returnValue: string
+        }
+        expect(dialog).not.toBeNull()
+        expect(Boolean(dialog.open)).toBe(false)
+
+        // 1st toggle click: should open download dialog
+        switchEl.click()
+        await elementUpdated(el)
+        expect(dialog.open).toBe(true)
+
+        // Cancel dialog
+        await dialog.close('cancel')
+        await elementUpdated(el)
+        expect(dialog.open).toBe(false)
+        expect(switchEl.selected).toBe(false)
+
+        // 2nd toggle click: should open download dialog AGAIN
+        switchEl.click()
+        await elementUpdated(el)
+        expect(dialog.open).toBe(true)
+
+        // Cancel dialog 2nd time
+        await dialog.close('')
+        await elementUpdated(el)
+        expect(dialog.open).toBe(false)
+        expect(switchEl.selected).toBe(false)
+
+        // 3rd toggle click: should open download dialog AGAIN
+        switchEl.click()
+        await elementUpdated(el)
+        expect(dialog.open).toBe(true)
+    })
 })

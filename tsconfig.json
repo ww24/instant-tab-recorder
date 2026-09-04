@@ -32,7 +32,8 @@
     "types": [
       "vitest/globals",
       "chrome",
-      "node"
+      "node",
+      "vite/client"
     ]
   }
 }

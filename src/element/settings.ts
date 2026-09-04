@@ -3,16 +3,27 @@ import { live } from 'lit/directives/live.js'
 import { customElement, property } from 'lit/decorators.js'
 import '@material/web/icon/icon'
 import '@material/web/button/filled-tonal-button'
+import '@material/web/button/text-button'
 import '@material/web/switch/switch'
 import '@material/web/select/filled-select'
 import '@material/web/select/select-option'
 import '@material/web/slider/slider'
+import '@material/web/dialog/dialog'
 import { MdFilledSelect } from '@material/web/select/filled-select'
 import { MdFilledTextField } from '@material/web/textfield/filled-text-field'
 import { MdSwitch } from '@material/web/switch/switch'
 import { MdSlider } from '@material/web/slider/slider'
-import { MdDialog } from '@material/web/dialog/dialog'
-import type { ResizeWindowMessage, SaveConfigSyncMessage, UpdateRecordingTimerMessage } from '../message'
+import type { MdDialog } from '@material/web/dialog/dialog'
+import type {
+    ResizeWindowMessage,
+    SaveConfigSyncMessage,
+    UpdateRecordingTimerMessage,
+    CheckWhisperModelResponse,
+    CheckWhisperModelMessage,
+    DownloadWhisperModelMessage,
+    DeleteWhisperModelMessage,
+    Message,
+} from '../message'
 import {
     Configuration,
     Resolution,
@@ -42,6 +53,19 @@ import { applyTheme } from '../theme'
 import { t } from '../i18n'
 import { switchLabelStyle } from './switchStyle'
 import { registerFlacEncoder } from '@mediabunny/flac-encoder'
+
+const TRANSCRIPTION_LANGUAGES = [
+    { value: 'japanese', label: '日本語 (Japanese)' },
+    { value: 'english', label: 'English' },
+    { value: 'chinese', label: '中文 (Chinese)' },
+    { value: 'korean', label: '한국어 (Korean)' },
+    { value: 'spanish', label: 'Español (Spanish)' },
+    { value: 'french', label: 'Français (French)' },
+    { value: 'german', label: 'Deutsch (German)' },
+    { value: 'italian', label: 'Italiano (Italian)' },
+    { value: 'portuguese', label: 'Português (Portuguese)' },
+    { value: 'russian', label: 'Русский (Russian)' },
+]
 
 @customElement('extension-settings')
 export class Settings extends LitElement {
@@ -154,6 +178,46 @@ export class Settings extends LitElement {
                 display: block;
                 margin-bottom: 0.5rem;
             }
+            .download-progress-container {
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+                width: 280px;
+                padding: 8px 0;
+            }
+            .download-progress-label {
+                display: flex;
+                justify-content: space-between;
+                font-size: 0.85rem;
+                color: var(--theme-text-secondary, #3f4948);
+            }
+            .progress-bar-bg {
+                width: 100%;
+                height: 8px;
+                background-color: var(--theme-surface-variant, #dae5e3);
+                border-radius: 4px;
+                overflow: hidden;
+            }
+            .progress-bar-fill {
+                height: 100%;
+                background-color: var(--theme-primary, #006a6a);
+                transition: width 0.3s ease;
+            }
+            md-dialog {
+                --md-dialog-container-color: var(--theme-dialog-bg, var(--md-sys-color-surface-container-high));
+                max-width: 560px;
+            }
+            md-dialog [slot='actions'] {
+                display: flex;
+                gap: 8px;
+                align-items: center;
+                justify-content: flex-end;
+            }
+            md-dialog [slot='actions'] md-filled-tonal-button,
+            md-dialog [slot='actions'] md-text-button {
+                height: 40px;
+                margin-bottom: 0;
+            }
         `,
     ]
 
@@ -172,6 +236,21 @@ export class Settings extends LitElement {
     @property()
     private timerEstimateText: string = ''
 
+    @property()
+    private whisperModelExists: boolean = false
+
+    @property()
+    private whisperModelSizeBytes: number = 0
+
+    @property()
+    private isDownloadingModel: boolean = false
+
+    @property()
+    private downloadProgressPercent: number = 0
+
+    @property()
+    private downloadStatusText: string = ''
+
     private timerEstimateIntervalId: ReturnType<typeof setInterval> | null = null
 
     public constructor() {
@@ -180,6 +259,21 @@ export class Settings extends LitElement {
         applyTheme(this.config.uiTheme)
         this.updateMicPermission()
         this.updateTimerEstimate()
+    }
+
+    override connectedCallback() {
+        super.connectedCallback()
+        chrome.runtime.onMessage.addListener(this.handleTranscriptionMessage)
+        this.initModelStatus()
+    }
+
+    override disconnectedCallback() {
+        super.disconnectedCallback()
+        chrome.runtime.onMessage.removeListener(this.handleTranscriptionMessage)
+        if (this.timerEstimateIntervalId != null) {
+            clearInterval(this.timerEstimateIntervalId)
+            this.timerEstimateIntervalId = null
+        }
     }
 
     protected override async firstUpdated() {
@@ -596,6 +690,67 @@ export class Settings extends LitElement {
                     </md-filled-tonal-button>
                 </div>
             </section>
+
+            <section class="settings-section">
+                <h2>${t('settingsExperimental')}</h2>
+                <div class="settings-group">
+                    <label class="switch-label" title="${t('settingsEnableTranscriptionTitle')}">
+                        ${t('settingsEnableTranscription')}
+                        <md-switch
+                            id="transcription-switch"
+                            ?disabled=${live(this.isDownloadingModel)}
+                            ?selected=${live(this.config.transcription.enabled ?? false)}
+                            @input=${this.onTranscriptionToggle}></md-switch>
+                    </label>
+
+                    ${
+                        this.isDownloadingModel
+                            ? html`
+                                  <div class="download-progress-container">
+                                      <div class="download-progress-label">
+                                          <span>${t('settingsTranscriptionDownloading')}</span>
+                                          <span>${this.downloadStatusText}</span>
+                                      </div>
+                                      <div class="progress-bar-bg">
+                                          <div
+                                              class="progress-bar-fill"
+                                              style="width: ${this.downloadProgressPercent}%"></div>
+                                      </div>
+                                  </div>
+                              `
+                            : ''
+                    }
+
+                    <md-filled-select
+                        class="codec-select"
+                        label=${t('settingsTranscriptionLanguage')}
+                        .value=${live(this.config.transcription.language || 'japanese')}
+                        ?disabled=${live(!this.config.transcription.enabled || this.isDownloadingModel)}
+                        @input=${this.updateProp('transcription', 'language')}>
+                        ${TRANSCRIPTION_LANGUAGES.map(
+                            lang => html`
+                                <md-select-option value=${lang.value}>
+                                    <div slot="headline">${lang.label}</div>
+                                </md-select-option>
+                            `,
+                        )}
+                    </md-filled-select>
+                </div>
+            </section>
+
+            <md-dialog id="download-confirm-dialog">
+                <div slot="headline">${t('settingsTranscriptionDownloadHeadline')}</div>
+                <md-icon slot="icon">download</md-icon>
+                <form id="download-form" slot="content" method="dialog">
+                    ${t('settingsTranscriptionDownloadDescription')}
+                </form>
+                <div slot="actions">
+                    <md-text-button form="download-form" value="cancel">${t('confirmCancelButton')}</md-text-button>
+                    <md-filled-tonal-button form="download-form" value="download" autofocus>
+                        ${t('settingsTranscriptionDownloadConfirm')}
+                    </md-filled-tonal-button>
+                </div>
+            </md-dialog>
         `
     }
 
@@ -745,6 +900,12 @@ export class Settings extends LitElement {
                     if (!(e.target instanceof MdSwitch)) return
                     this.config[key1] = e.target.selected
                     break
+                case 'transcription':
+                    if (key2 === 'language') {
+                        if (!(e.target instanceof MdFilledSelect)) return
+                        this.config.transcription.language = e.target.value
+                    }
+                    break
                 case 'uiTheme':
                     if (!(e.target instanceof MdFilledSelect)) return
                     if (!isUITheme(e.target.value)) return
@@ -769,6 +930,127 @@ export class Settings extends LitElement {
             if (key1 === 'videoFormat' || (key1 === 'microphone' && key2 === 'enabled')) {
                 await this.validateEncoding()
             }
+        }
+    }
+
+    private handleTranscriptionMessage = async (message: Message) => {
+        if (message.type === 'whisper-model-download-progress') {
+            this.isDownloadingModel = true
+            this.downloadProgressPercent = Math.round(message.data.progress ?? 0)
+            const file = message.data.file ? message.data.file.split('/').pop() : ''
+            this.downloadStatusText = file
+                ? `${file} (${this.downloadProgressPercent}%)`
+                : `${this.downloadProgressPercent}%`
+            this.requestUpdate()
+        } else if (message.type === 'whisper-model-download-complete') {
+            this.isDownloadingModel = false
+            if (message.success) {
+                this.config.transcription.enabled = true
+                Settings.setConfiguration(this.config)
+                Settings.syncConfiguration(this.config)
+                this.checkModelStatus()
+            } else {
+                this.alert(t('settingsTranscriptionDownloadFailed', [message.error ?? 'Unknown error']))
+                this.config.transcription.enabled = false
+                Settings.setConfiguration(this.config)
+                Settings.syncConfiguration(this.config)
+                try {
+                    await chrome.runtime.sendMessage<DeleteWhisperModelMessage>({ type: 'delete-whisper-model' })
+                    await this.checkModelStatus()
+                } catch (e) {
+                    console.warn('Failed to delete whisper model cache on failure:', e)
+                }
+                this.requestUpdate()
+            }
+        }
+    }
+
+    private async initModelStatus() {
+        await this.checkModelStatus()
+        // If transcription is disabled, cleanup any leftover/incomplete model cache
+        if (!this.config.transcription.enabled && (this.whisperModelExists || this.whisperModelSizeBytes > 0)) {
+            try {
+                await chrome.runtime.sendMessage<DeleteWhisperModelMessage>({ type: 'delete-whisper-model' })
+                await this.checkModelStatus()
+            } catch (e) {
+                console.warn('Failed to cleanup whisper model cache:', e)
+            }
+        }
+    }
+
+    private async checkModelStatus() {
+        try {
+            const res = await chrome.runtime.sendMessage<CheckWhisperModelMessage, CheckWhisperModelResponse>({
+                type: 'check-whisper-model',
+            })
+            if (res) {
+                this.whisperModelExists = res.hasModel
+                this.whisperModelSizeBytes = res.sizeBytes
+            }
+        } catch (e) {
+            console.warn('Failed to check whisper model:', e)
+        }
+    }
+
+    private async onTranscriptionToggle(e: Event) {
+        if (!(e.target instanceof MdSwitch)) return
+        const switchEl = e.target
+        const targetChecked = switchEl.selected
+
+        if (targetChecked) {
+            // Turning ON
+            if (this.whisperModelExists) {
+                this.config.transcription.enabled = true
+                Settings.setConfiguration(this.config)
+                await Settings.syncConfiguration(this.config)
+                this.requestUpdate()
+            } else {
+                const resetSwitch = () => {
+                    switchEl.selected = false
+                    const input = switchEl.shadowRoot?.querySelector('input')
+                    if (input) {
+                        input.checked = false
+                    }
+                    this.requestUpdate()
+                }
+                resetSwitch()
+
+                // Prompt download dialog
+                const dialog = this.shadowRoot?.getElementById('download-confirm-dialog') as MdDialog | null
+                if (dialog) {
+                    const listener = async () => {
+                        dialog.removeEventListener('close', listener)
+                        const confirmed = dialog.returnValue === 'download'
+                        dialog.returnValue = ''
+
+                        if (confirmed) {
+                            this.isDownloadingModel = true
+                            this.downloadProgressPercent = 0
+                            this.downloadStatusText = t('settingsTranscriptionStartingDownload')
+                            this.requestUpdate()
+                            const msg: DownloadWhisperModelMessage = { type: 'download-whisper-model' }
+                            await chrome.runtime.sendMessage(msg)
+                        } else {
+                            // Cancelled: reset switch and inner input state
+                            resetSwitch()
+                        }
+                    }
+                    dialog.addEventListener('close', listener)
+                    await dialog.show()
+                }
+            }
+        } else {
+            // Turning OFF
+            this.config.transcription.enabled = false
+            Settings.setConfiguration(this.config)
+            await Settings.syncConfiguration(this.config)
+            try {
+                await chrome.runtime.sendMessage<DeleteWhisperModelMessage>({ type: 'delete-whisper-model' })
+                await this.checkModelStatus()
+            } catch (err) {
+                console.warn('Failed to delete whisper model on toggle off:', err)
+            }
+            this.requestUpdate()
         }
     }
 
@@ -991,14 +1273,6 @@ export class Settings extends LitElement {
         }
         compute()
         this.timerEstimateIntervalId = setInterval(compute, 60_000)
-    }
-
-    override disconnectedCallback() {
-        super.disconnectedCallback()
-        if (this.timerEstimateIntervalId != null) {
-            clearInterval(this.timerEstimateIntervalId)
-            this.timerEstimateIntervalId = null
-        }
     }
 }
 

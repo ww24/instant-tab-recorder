@@ -2,6 +2,7 @@ import { Settings } from './element/settings'
 import type {
     Message,
     StartRecordingResponse,
+    CheckWhisperModelResponse,
     TabTrackEndedMessage,
     PreviewFrameMessage,
     UnexpectedRecordingStateMessage,
@@ -14,6 +15,7 @@ import { createRecordingSession } from './recorder'
 import { OffscreenHandler } from './offscreen_handler'
 import { RecordingDB } from './recording_db'
 import { errorToString } from './error'
+import { OPFSCache } from './transcription/opfs_cache'
 
 const preview = new Preview(async ({ image, width, height }) => {
     const msg: PreviewFrameMessage = {
@@ -73,13 +75,30 @@ const handler = new OffscreenHandler({
         const fileHandle = await dirHandle.getFileHandle(path)
         return await fileHandle.getFile()
     },
+    saveVttFile: async (path: string, content: string) => {
+        const dirHandle = await navigator.storage.getDirectory()
+        const fileHandle = await dirHandle.getFileHandle(path, { create: true })
+        const writable = await fileHandle.createWritable()
+        await writable.write(content)
+        await writable.close()
+    },
+    checkWhisperModel: async () => {
+        const cache = new OPFSCache()
+        const hasModel = await cache.hasModel()
+        const sizeBytes = await cache.getTotalSize()
+        return { hasModel, sizeBytes }
+    },
+    deleteWhisperModel: async () => {
+        const cache = new OPFSCache()
+        await cache.clear()
+    },
 })
 
 chrome.runtime.onMessage.addListener(
     (
         message: Message,
         _sender: chrome.runtime.MessageSender,
-        sendResponse: (response?: StartRecordingResponse) => void,
+        sendResponse: (response?: StartRecordingResponse | CheckWhisperModelResponse) => void,
     ) => {
         const resultPromise = handler.handleMessage(message)
         if (resultPromise == null) return

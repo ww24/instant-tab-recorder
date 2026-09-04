@@ -1,0 +1,6 @@
+{
+  "model_type": "silero_vad",
+  "state_dim": 128,
+  "num_layers": 2,
+  "sampling_rate": [8000, 16000]
+}

@@ -45,6 +45,8 @@ export interface RecordingRecord {
     subFiles: SubFileInfo[]
     /** WebP thumbnail blob, null when generation failed, undefined for legacy records */
     thumbnail?: Blob | null
+    /** OPFS transcript file path (e.g. "video-1234567890.vtt"), undefined if not transcribed */
+    transcriptFilePath?: string
 }
 
 function openDB(): Promise<IDBDatabase> {
@@ -162,7 +164,7 @@ export class RecordingDB {
         let opfsMainFileCount = 0
         for (const file of files) {
             if (file.isTemporary) continue
-            if (file.title.endsWith(crswapExp)) continue
+            if (file.title.endsWith(crswapExp) || file.title.endsWith('.vtt')) continue
             if (timestampRegex.test(file.title) && !subFileRegex.test(file.title)) {
                 opfsMainFileCount++
             }
@@ -189,7 +191,7 @@ export class RecordingDB {
 
         for (const file of files) {
             if (file.isTemporary) continue
-            if (file.title.endsWith(crswapExp)) continue
+            if (file.title.endsWith(crswapExp) || file.title.endsWith('.vtt')) continue
 
             const subMatch = file.title.match(subFileRegex)
             if (subMatch) {

@@ -17,7 +17,14 @@ import { MdFilterChip } from '@material/web/chips/filter-chip'
 import Confirm from './confirm'
 import Alert from './alert'
 import type { ShowDirectoryPickerOptions } from '../type'
-import { Message, SaveConfigSyncMessage, RequestRecordingStateMessage } from '../message'
+import {
+    Message,
+    SaveConfigSyncMessage,
+    RequestRecordingStateMessage,
+    StartTranscriptionMessage,
+    type StartTranscriptionResponse,
+    type TranscriptionProgressMessage,
+} from '../message'
 import { sendException } from '../sentry'
 import { recordingApi } from '../api_client'
 import { Settings } from './settings'
@@ -39,6 +46,7 @@ export interface RecordEntry {
     subFiles: SubFileInfo[] // Related audio separation files from IndexedDB
     subFilesSize: number // Total size of sub-files in bytes
     thumbnailFileName?: string
+    transcriptFilePath?: string
 }
 
 /**
@@ -169,6 +177,21 @@ export class RecordList extends LitElement {
             font-size: 0.875rem;
             font-weight: 500;
         }
+        .badge-subtitles {
+            display: inline-block;
+            padding: 1px 4px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            line-height: 1;
+            border-radius: 3px;
+            background-color: var(--theme-primary-container, #cce8e7);
+            color: var(--theme-on-primary-container, #051f1f);
+            margin-left: 6px;
+            vertical-align: middle;
+        }
+        .transcribe-action {
+            margin-top: 4px;
+        }
     `
 
     private static readonly dateTimeFormat = new Intl.DateTimeFormat(undefined, {
@@ -206,6 +229,12 @@ export class RecordList extends LitElement {
     @state()
     private fetchError: boolean = false
 
+    @state()
+    private transcriptionEnabled: boolean = false
+
+    @state()
+    private transcribingStatus: Map<number, { status: string; progress?: number }> = new Map()
+
     private recordingStartAtMs: number | null = null
     private recordingStopAtMs: number | null = null
     private recordingPaused: boolean = false
@@ -216,15 +245,22 @@ export class RecordList extends LitElement {
         super()
         this.records = []
         this.sortOrder = Settings.getConfiguration().recordingSortOrder
+        this.transcriptionEnabled = Settings.getConfiguration().transcription.enabled
     }
 
     override connectedCallback() {
         super.connectedCallback()
+        this.transcriptionEnabled = Settings.getConfiguration().transcription.enabled
+        window.addEventListener(Settings.CONFIG_CHANGED_EVENT, this.onConfigChanged)
         chrome.runtime.onMessage.addListener(this.handleMessage)
+        chrome.storage.onChanged.addListener(this.handleStorageChanged)
         ;(async () => {
             await this.updateRecord()
             this.syncElapsedTimer()
             await this.checkStoredRecordingError()
+            if (this.transcriptionEnabled) {
+                await this.checkActiveTranscription()
+            }
             // Request current recording state to get accurate pause info
             const msg: RequestRecordingStateMessage = { type: 'request-recording-state' }
             await chrome.runtime.sendMessage(msg)
@@ -236,36 +272,115 @@ export class RecordList extends LitElement {
 
     override disconnectedCallback() {
         super.disconnectedCallback()
+        window.removeEventListener(Settings.CONFIG_CHANGED_EVENT, this.onConfigChanged)
         chrome.runtime.onMessage.removeListener(this.handleMessage)
+        chrome.storage.onChanged.removeListener(this.handleStorageChanged)
         this.stopElapsedTimer()
+    }
+
+    private onConfigChanged = (e: Event) => {
+        const customEvent = e as CustomEvent<Configuration>
+        if (customEvent.detail?.transcription) {
+            const wasEnabled = this.transcriptionEnabled
+            this.transcriptionEnabled = customEvent.detail.transcription.enabled
+            if (!wasEnabled && this.transcriptionEnabled) {
+                this.checkActiveTranscription().catch(console.error)
+            }
+            this.requestUpdate()
+        }
+    }
+
+    private handleStorageChanged = (changes: { [key: string]: chrome.storage.StorageChange }, areaName: string) => {
+        if (areaName === 'local' && changes.activeTranscription) {
+            const change = changes.activeTranscription
+            if (change.newValue?.recordedAt) {
+                const recordedAt = change.newValue.recordedAt as number
+                if (!this.transcribingStatus.has(recordedAt)) {
+                    const next = new Map(this.transcribingStatus)
+                    next.set(recordedAt, { status: t('recordListTranscriptionStarting') })
+                    this.transcribingStatus = next
+                    this.requestUpdate()
+                }
+            } else if (change.oldValue && !change.newValue) {
+                if (this.transcribingStatus.size > 0) {
+                    this.transcribingStatus = new Map()
+                    this.requestUpdate()
+                }
+            }
+        }
+    }
+
+    private async checkActiveTranscription() {
+        try {
+            const result = await chrome.storage.local.get('activeTranscription')
+            if (result.activeTranscription?.recordedAt) {
+                const recordedAt = result.activeTranscription.recordedAt as number
+                if (!this.transcribingStatus.has(recordedAt)) {
+                    const next = new Map(this.transcribingStatus)
+                    next.set(recordedAt, { status: t('recordListTranscriptionStarting') })
+                    this.transcribingStatus = next
+                    this.requestUpdate()
+                }
+            }
+        } catch (e) {
+            console.error('Failed to check active transcription:', e)
+        }
+    }
+
+    private isTranscribingAny(): boolean {
+        return this.transcribingStatus.size > 0
     }
 
     // NOTE: Must not return true or a truthy value (e.g. Promise from async function)
     // to avoid interfering with sendMessage responses from other contexts.
     private handleMessage = (message: Message) => {
-        if (message.type !== 'recording-state') return
-        ;(async () => {
-            const recordingState = message.data
-            if (recordingState.isRecording && recordingState.startAtMs != null) {
-                this.recordingTotalPausedMs = recordingState.totalPausedMs ?? 0
-                if (recordingState.isPaused) {
-                    this.recordingPaused = true
-                    this.pauseElapsedTimer(recordingState.startAtMs)
+        if (message.type === 'recording-state') {
+            ;(async () => {
+                const recordingState = message.data
+                if (recordingState.isRecording && recordingState.startAtMs != null) {
+                    this.recordingTotalPausedMs = recordingState.totalPausedMs ?? 0
+                    if (recordingState.isPaused) {
+                        this.recordingPaused = true
+                        this.pauseElapsedTimer(recordingState.startAtMs)
+                    } else {
+                        this.recordingPaused = false
+                        this.startElapsedTimer(recordingState.startAtMs)
+                    }
+                    this.recordingStopAtMs = recordingState.stopAtMs ?? null
+                    this.updateTimerStopText()
                 } else {
-                    this.recordingPaused = false
-                    this.startElapsedTimer(recordingState.startAtMs)
+                    this.stopElapsedTimer()
                 }
-                this.recordingStopAtMs = recordingState.stopAtMs ?? null
-                this.updateTimerStopText()
-            } else {
-                this.stopElapsedTimer()
-            }
-            await this.updateRecord()
-            await this.checkStoredRecordingError()
-        })().catch(e => {
-            console.error(e)
-            sendException(e, { exceptionSource: 'option.recordList.onMessage' })
-        })
+                await this.updateRecord()
+                await this.checkStoredRecordingError()
+            })().catch(e => {
+                console.error(e)
+                sendException(e, { exceptionSource: 'option.recordList.onMessage' })
+            })
+        } else if (message.type === 'transcription-started') {
+            const next = new Map(this.transcribingStatus)
+            next.set(message.recordedAt, { status: t('recordListTranscriptionStarting') })
+            this.transcribingStatus = next
+            this.requestUpdate()
+        } else if (message.type === 'transcription-progress') {
+            const next = new Map(this.transcribingStatus)
+            const statusText = RecordList.formatTranscriptionStatus(message)
+            next.set(message.recordedAt, { status: statusText, progress: message.progress })
+            this.transcribingStatus = next
+            this.requestUpdate()
+        } else if (message.type === 'transcription-complete') {
+            const next = new Map(this.transcribingStatus)
+            next.delete(message.recordedAt)
+            this.transcribingStatus = next
+            this.updateRecord().catch(console.error)
+            this.requestUpdate()
+        } else if (message.type === 'transcription-error') {
+            const next = new Map(this.transcribingStatus)
+            next.delete(message.recordedAt)
+            this.transcribingStatus = next
+            RecordList.showTranscriptionError(message.error)
+            this.requestUpdate()
+        }
     }
 
     private async checkStoredRecordingError() {
@@ -288,6 +403,70 @@ export class RecordList extends LitElement {
         alertDialog.setContent(t('recordListRecordingFailed'), error, { preformatted: true })
         const dialog = alertDialog.shadowRoot?.querySelector('md-dialog') as MdDialog | null
         dialog?.show()
+    }
+
+    private static showTranscriptionError(error: string) {
+        const alertDialog = document.getElementById('alert-dialog') as Alert | null
+        if (alertDialog == null) return
+        alertDialog.setContent(t('recordListTranscriptionFailed'), error, { preformatted: true })
+        const dialog = alertDialog.shadowRoot?.querySelector('md-dialog') as MdDialog | null
+        dialog?.show()
+    }
+
+    private static formatTranscriptionStatus(message: TranscriptionProgressMessage): string {
+        switch (message.phase) {
+            case 'model-loading':
+                return message.percent !== undefined
+                    ? t('transcriptionStatusLoadingModel', [String(message.percent)])
+                    : t('transcriptionLoadingModel')
+            case 'model-initializing':
+                return t('transcriptionStatusInitializingModel')
+            case 'audio-extracting':
+                return message.percent !== undefined
+                    ? t('transcriptionStatusExtractingAudio', [String(message.percent)])
+                    : message.status
+            case 'transcribing':
+                return message.detail
+                    ? t('transcriptionStatusTranscribingRange', [message.detail])
+                    : t('transcriptionStatusTranscribing')
+            default:
+                return message.status
+        }
+    }
+
+    private async startTranscription(record: RecordEntry) {
+        if (!record.recordedAt) return
+        if (this.isTranscribingAny()) {
+            RecordList.showTranscriptionError(t('recordListTranscribeAlreadyRunning'))
+            return
+        }
+        const recordedAt = record.recordedAt.getTime()
+        const next = new Map(this.transcribingStatus)
+        next.set(recordedAt, { status: t('recordListTranscriptionStarting') })
+        this.transcribingStatus = next
+        this.requestUpdate()
+
+        try {
+            const msg: StartTranscriptionMessage = {
+                type: 'start-transcription',
+                recordedAt,
+            }
+            const res = (await chrome.runtime.sendMessage(msg)) as StartTranscriptionResponse | undefined
+            if (res && !res.ok) {
+                const map = new Map(this.transcribingStatus)
+                map.delete(recordedAt)
+                this.transcribingStatus = map
+                RecordList.showTranscriptionError(res.error || t('recordListTranscriptionFailed'))
+                this.requestUpdate()
+            }
+        } catch (e) {
+            console.error('Failed to start transcription:', e)
+            const map = new Map(this.transcribingStatus)
+            map.delete(recordedAt)
+            this.transcribingStatus = map
+            RecordList.showTranscriptionError(e instanceof Error ? e.message : String(e))
+            this.requestUpdate()
+        }
     }
 
     private static getThumbnailKey(record: Pick<RecordEntry, 'path' | 'thumbnailFileName'>): string | null {
@@ -343,6 +522,11 @@ export class RecordList extends LitElement {
                                 : html`<a href="${downloadUrl}">${record.title}</a>`
                         }
                         ${
+                            this.transcriptionEnabled && record.transcriptFilePath
+                                ? html`<span class="badge-subtitles" title="${t('recordListHasSubtitles')}">CC</span>`
+                                : ''
+                        }
+                        ${
                             record.isRecording
                                 ? ''
                                 : record.subFiles.map(sub => {
@@ -383,6 +567,33 @@ export class RecordList extends LitElement {
                             record.durationMs != null && !record.isRecording
                                 ? html`<div class="meta" title=${t('recordListTitleDuration')}>
                                       <md-icon>timer</md-icon> ${formatElapsedTime(record.durationMs)}
+                                  </div>`
+                                : ''
+                        }
+                        ${
+                            this.transcriptionEnabled &&
+                            record.recordedAt &&
+                            this.transcribingStatus.has(record.recordedAt.getTime())
+                                ? html`<div class="meta" title=${t('recordListTitleTranscribing')}>
+                                      <md-icon>pending</md-icon>
+                                      <span>${this.transcribingStatus.get(record.recordedAt.getTime())?.status}</span>
+                                  </div>`
+                                : ''
+                        }
+                        ${
+                            this.transcriptionEnabled &&
+                            !record.isRecording &&
+                            !record.isCanceled &&
+                            !record.transcriptFilePath &&
+                            record.recordedAt &&
+                            !this.transcribingStatus.has(record.recordedAt.getTime())
+                                ? html`<div class="transcribe-action">
+                                      <md-assist-chip
+                                          label="${t('recordListTranscribe')}"
+                                          ?disabled=${this.isTranscribingAny()}
+                                          @click=${() => this.startTranscription(record)}>
+                                          <md-icon slot="icon">transcribe</md-icon>
+                                      </md-assist-chip>
                                   </div>`
                                 : ''
                         }
@@ -498,6 +709,7 @@ export class RecordList extends LitElement {
             subFiles: meta.subFiles ?? [],
             subFilesSize: meta.subFilesSize ?? 0,
             thumbnailFileName: meta.thumbnailFileName,
+            transcriptFilePath: meta.transcriptFilePath,
         }))
 
         const oldVal = [...this.records]
@@ -592,8 +804,13 @@ export class RecordList extends LitElement {
     }
     private playRecord(record: RecordEntry) {
         return () => {
-            const fileUrl = getRecordingFileUrl(record.path)
-            window.open(fileUrl, '_blank', 'popup=true')
+            if (this.transcriptionEnabled) {
+                const playerUrl = `/player.html?file=${encodeURIComponent(record.path)}`
+                window.open(playerUrl, '_blank', 'popup=true')
+            } else {
+                const fileUrl = getRecordingFileUrl(record.path)
+                window.open(fileUrl, '_blank', 'popup=true')
+            }
         }
     }
     private selectRecord(record: RecordEntry) {
@@ -660,6 +877,25 @@ export class RecordList extends LitElement {
                 } catch (e) {
                     subWritable.close()
                     throw e
+                }
+            }
+            // Save transcript file if present
+            if (record.transcriptFilePath) {
+                console.log('Copy transcript:', record.transcriptFilePath)
+                try {
+                    const transcriptHandle = await dirHandle.getFileHandle(record.transcriptFilePath, { create: true })
+                    const transcriptBlob = await recordingApi.getRecordingFile(record.transcriptFilePath)
+                    if (transcriptBlob) {
+                        const transcriptWritable = await transcriptHandle.createWritable()
+                        try {
+                            await transcriptBlob.stream().pipeTo(transcriptWritable)
+                        } catch (err) {
+                            transcriptWritable.close()
+                            throw err
+                        }
+                    }
+                } catch (err) {
+                    console.warn('Failed to save transcript file:', err)
                 }
             }
         }

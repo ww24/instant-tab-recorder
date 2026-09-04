@@ -8,6 +8,8 @@ const extensionToMimeType: Record<string, string> = {
     '.aac': 'audio/aac',
     '.flac': 'audio/flac',
     '.webp': 'image/webp',
+    '.vtt': 'text/vtt; charset=utf-8',
+    '.srt': 'application/x-subrip',
 }
 
 /**
