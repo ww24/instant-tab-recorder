@@ -12,21 +12,64 @@ const privacyMdFiles = {
     en: path.resolve(docsDir, 'PRIVACY.md'),
     ja: path.resolve(docsDir, 'PRIVACY_JA.md'),
 }
+const termsMdFiles = {
+    en: path.resolve(docsDir, 'TERMS.md'),
+    ja: path.resolve(docsDir, 'TERMS_JA.md'),
+}
 const privacyTemplate = path.resolve(docsDir, 'privacy.html')
+const termsTemplate = path.resolve(docsDir, 'terms.html')
 
-function loadPrivacy() {
+function parseLegalDoc(filePath: string): string {
+    const rawMarkdown = readFileSync(filePath, 'utf-8')
+    const html = marked.parse(rawMarkdown) as string
+    return html.replace(
+        /href="([^":#?]*\b(?:TERMS|PRIVACY)(?:_JA)?)\.md(#.*?)?"/gi,
+        (_, file, hash = '') => `href="${file}.html${hash}"`,
+    )
+}
+
+function loadLegalDocs() {
     return {
-        privacyEn: marked.parse(readFileSync(privacyMdFiles.en, 'utf-8')) as string,
-        privacyJa: marked.parse(readFileSync(privacyMdFiles.ja, 'utf-8')) as string,
+        privacyEn: parseLegalDoc(privacyMdFiles.en),
+        privacyJa: parseLegalDoc(privacyMdFiles.ja),
+        termsEn: parseLegalDoc(termsMdFiles.en),
+        termsJa: parseLegalDoc(termsMdFiles.ja),
     }
 }
 
-const privacyPages = [
-    { fileName: 'PRIVACY.html', lang: 'en', title: 'Privacy Policy', contentKey: 'privacyEn' as const },
-    { fileName: 'PRIVACY_JA.html', lang: 'ja', title: 'プライバシーポリシー', contentKey: 'privacyJa' as const },
+const legalPages = [
+    {
+        fileName: 'PRIVACY.html',
+        lang: 'en',
+        title: 'Privacy Policy',
+        contentKey: 'privacyEn' as const,
+        template: privacyTemplate,
+    },
+    {
+        fileName: 'PRIVACY_JA.html',
+        lang: 'ja',
+        title: 'プライバシーポリシー',
+        contentKey: 'privacyJa' as const,
+        template: privacyTemplate,
+    },
+    {
+        fileName: 'TERMS.html',
+        lang: 'en',
+        title: 'Terms of Service',
+        contentKey: 'termsEn' as const,
+        template: termsTemplate,
+    },
+    {
+        fileName: 'TERMS_JA.html',
+        lang: 'ja',
+        title: '利用規約',
+        contentKey: 'termsJa' as const,
+        template: termsTemplate,
+    },
 ]
 
-function renderPrivacyPage(templateHtml: string, page: (typeof privacyPages)[number], content: string): string {
+function renderLegalPage(templatePath: string, page: (typeof legalPages)[number], content: string): string {
+    const templateHtml = readFileSync(templatePath, 'utf-8')
     return templateHtml
         .replace(/<%=\s*lang\s*%>/g, () => page.lang)
         .replace(/<%=\s*title\s*%>/g, () => page.title)
@@ -62,7 +105,7 @@ const PAGE_CONFIG = {
 
 function renderLpPage(templateHtml: string, lang: 'en' | 'ja'): string {
     const config = PAGE_CONFIG[lang]
-    const vars = loadPrivacy()
+    const vars = loadLegalDocs()
 
     // 1. Remove opposite language data-lang blocks
     const targetRemoveLang = lang === 'en' ? 'ja' : 'en'
@@ -72,10 +115,12 @@ function renderLpPage(templateHtml: string, lang: 'en' | 'ja'): string {
     // 2. Clean up current language data-lang attribute
     result = result.replace(new RegExp(`\\s*data-lang="${lang}"`, 'g'), '')
 
-    // 3. Render privacy placeholders
+    // 3. Render legal placeholders
     result = result
         .replace(/<%=\s*privacyEn\s*%>/g, () => vars.privacyEn)
         .replace(/<%=\s*privacyJa\s*%>/g, () => vars.privacyJa)
+        .replace(/<%=\s*termsEn\s*%>/g, () => vars.termsEn)
+        .replace(/<%=\s*termsJa\s*%>/g, () => vars.termsJa)
 
     // 4. Replace page configuration variables
     result = result.replace(/<%=\s*(\w+)\s*%>/g, (_, key) => {
@@ -104,14 +149,13 @@ function docsPlugin(): Plugin[] {
         name: 'docs-build',
         apply: 'build',
         buildStart() {
-            const vars = loadPrivacy()
-            const templateHtml = readFileSync(privacyTemplate, 'utf-8')
+            const vars = loadLegalDocs()
 
-            for (const page of privacyPages) {
+            for (const page of legalPages) {
                 this.emitFile({
                     type: 'asset',
                     fileName: page.fileName,
-                    source: renderPrivacyPage(templateHtml, page, vars[page.contentKey]),
+                    source: renderLegalPage(page.template, page, vars[page.contentKey]),
                 })
             }
 
@@ -148,12 +192,11 @@ function docsPlugin(): Plugin[] {
         },
         configureServer(server) {
             server.middlewares.use((req, res, next) => {
-                // Serve privacy pages
-                const match = privacyPages.find(p => req.url === '/' + p.fileName)
+                // Serve legal pages
+                const match = legalPages.find(p => req.url === '/' + p.fileName)
                 if (match) {
-                    const vars = loadPrivacy()
-                    const templateHtml = readFileSync(privacyTemplate, 'utf-8')
-                    const html = renderPrivacyPage(templateHtml, match, vars[match.contentKey])
+                    const vars = loadLegalDocs()
+                    const html = renderLegalPage(match.template, match, vars[match.contentKey])
                     const injected = html.replace(
                         '</head>',
                         '  <script type="module" src="/@vite/client"></script>\n</head>',
@@ -171,12 +214,23 @@ function docsPlugin(): Plugin[] {
                 }
                 next()
             })
-            server.watcher.add([privacyMdFiles.en, privacyMdFiles.ja, privacyTemplate, indexHtmlPath])
+            server.watcher.add([
+                privacyMdFiles.en,
+                privacyMdFiles.ja,
+                termsMdFiles.en,
+                termsMdFiles.ja,
+                privacyTemplate,
+                termsTemplate,
+                indexHtmlPath,
+            ])
             server.watcher.on('change', changedPath => {
                 switch (changedPath) {
                     case privacyMdFiles.en:
                     case privacyMdFiles.ja:
+                    case termsMdFiles.en:
+                    case termsMdFiles.ja:
                     case privacyTemplate:
+                    case termsTemplate:
                     case indexHtmlPath:
                         server.ws.send({ type: 'full-reload' })
                 }

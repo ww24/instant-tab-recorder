@@ -88,6 +88,7 @@ const METRICS = {
     DURATION: 'recording.duration',
     FILESIZE: 'recording.filesize',
     EXTERNAL_LINK: 'external_link.click',
+    AGREE_TERMS: 'terms.agree',
 }
 
 export function sendEvent(e: Event) {
@@ -145,6 +146,11 @@ export function sendEvent(e: Event) {
 
         case 'migration_end':
             logger.info(e.type, { ...flatten(e.metrics) }, { scope })
+            break
+
+        case 'agree_terms':
+            metrics.count(METRICS.AGREE_TERMS, 1, { scope })
+            logger.info(e.type, {}, { scope })
             break
     }
 }

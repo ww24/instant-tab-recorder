@@ -318,6 +318,7 @@ export class Configuration {
     audioSeparation: AudioSeparation
     recordingTimer: RecordingTimer
     uiTheme: UITheme
+    hasAgreedTerms: boolean
     constructor() {
         this.windowSize = {
             width: 1920,
@@ -370,10 +371,11 @@ export class Configuration {
             skipStopConfirmation: false,
         }
         this.uiTheme = 'auto'
+        this.hasAgreedTerms = false
     }
-    static restoreDefault({ userId }: Configuration): Configuration {
+    static restoreDefault({ userId, hasAgreedTerms }: Configuration): Configuration {
         const config = new Configuration()
-        return { ...config, userId }
+        return { ...config, userId, hasAgreedTerms }
     }
     static filterForSync(config: Configuration): SyncConfiguration {
         // Exclude microphone and cropping from sync as it depends on device-specific information

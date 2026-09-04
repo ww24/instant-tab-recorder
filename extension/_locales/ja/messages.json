@@ -593,5 +593,34 @@
     },
     "settingsMicPermissionRequired": {
         "message": "録音にはマイクの許可が必要です。\nプロンプトが表示されたらアクセスを許可してください。"
+    },
+    "termsHeadline": {
+        "message": "利用規約への同意"
+    },
+    "termsDescription": {
+        "message": "本拡張機能の使用を継続する場合は、$LINK$に同意したものとみなします。",
+        "placeholders": {
+            "link": {
+                "content": "$1"
+            }
+        }
+    },
+    "termsLinkText": {
+        "message": "利用規約"
+    },
+    "termsUrl": {
+        "message": "https://recorder.appcloud.info/TERMS_JA.html"
+    },
+    "termsOkButton": {
+        "message": "OK"
+    },
+    "supportTerms": {
+        "message": "規約"
+    },
+    "privacyPolicyLinkText": {
+        "message": "プライバシーポリシー"
+    },
+    "privacyPolicyUrl": {
+        "message": "https://recorder.appcloud.info/PRIVACY_JA.html"
     }
 }
