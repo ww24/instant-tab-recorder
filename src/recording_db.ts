@@ -1,8 +1,7 @@
 import type { RecordingSortOrder } from './configuration'
 import type { RecordingStorage } from './storage'
 import type { TranscriptionResult } from './transcription/types'
-
-export type { TranscriptionResult }
+import type { SummaryResult } from './summary/types'
 
 const DB_NAME = 'instant-tab-recorder'
 const DB_VERSION = 2
@@ -50,6 +49,8 @@ export interface RecordingRecord {
     thumbnail?: Blob | null
     /** Transcription result */
     transcription?: TranscriptionResult
+    /** Summary result */
+    summary?: SummaryResult
 }
 
 function openDB(): Promise<IDBDatabase> {

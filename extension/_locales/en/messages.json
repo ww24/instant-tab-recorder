@@ -934,5 +934,113 @@
     "playerNoSpeechDetected": {
         "message": "No speech detected.",
         "description": "Message when transcription finds no segments"
+    },
+    "settingsSummary": {
+        "message": "Transcription Summary",
+        "description": "Section title or label for transcription summary feature"
+    },
+    "settingsSummaryTitle": {
+        "message": "Enable transcription summary (requires ~$SIZE$ model download)",
+        "description": "Tooltip for summary switch",
+        "placeholders": {
+            "size": {
+                "content": "$1",
+                "example": "4.9 GB"
+            }
+        }
+    },
+    "settingsSummaryEnableHint": {
+        "message": "When enabled, summarization works entirely within your local environment.\nApproximately $SIZE$ of model data will be downloaded, so please be mindful of your network environment.",
+        "description": "Hint shown near summary toggle when disabled",
+        "placeholders": {
+            "size": {
+                "content": "$1",
+                "example": "4.9 GB"
+            }
+        }
+    },
+    "settingsSummaryDownloadingHint": {
+        "message": "Disabling will cancel the model data download.",
+        "description": "Hint shown near summary toggle while model is downloading"
+    },
+    "settingsSummaryDisableWarning": {
+        "message": "Disabling will delete the cached model data (~$SIZE$).",
+        "description": "Warning shown near the summary toggle",
+        "placeholders": {
+            "size": {
+                "content": "$1",
+                "example": "4.9 GB"
+            }
+        }
+    },
+    "settingsUsedModel": {
+        "message": "Model: $MODEL$",
+        "description": "Label indicating the model used",
+        "placeholders": {
+            "model": {
+                "content": "$1",
+                "example": "Whisper Large v3 Turbo"
+            }
+        }
+    },
+    "settingsSummaryModelMissingWarning": {
+        "message": "Summary model data is missing or corrupted. Please toggle summary off and on again to redownload the model.",
+        "description": "Warning shown when summary is enabled but model cache files are missing or incomplete"
+    },
+    "settingsSummaryDownloadPending": {
+        "message": "Preparing download...",
+        "description": "Status text while preparing summary model download"
+    },
+    "settingsSummaryPrompt": {
+        "message": "Summary Prompt",
+        "description": "Label for the summary instruction prompt field in settings"
+    },
+    "playerSummary": {
+        "message": "Summary",
+        "description": "Button label for opening summary modal"
+    },
+    "playerSummaryTitle": {
+        "message": "Transcription Summary",
+        "description": "Headline of summary modal dialog"
+    },
+    "playerStartSummary": {
+        "message": "Start Summary",
+        "description": "Button to start summary generation"
+    },
+    "playerSummaryLoadingModel": {
+        "message": "Loading model...",
+        "description": "Status text while summary model is loading"
+    },
+    "playerSummaryGenerating": {
+        "message": "Generating summary...",
+        "description": "Status text while summary is generating"
+    },
+    "playerSummaryError": {
+        "message": "Failed to generate summary",
+        "description": "Error message when summary generation fails"
+    },
+    "playerSummaryCopy": {
+        "message": "Copy",
+        "description": "Button to copy summary text"
+    },
+    "playerSummaryCopied": {
+        "message": "Copied",
+        "description": "Feedback message when summary text is copied"
+    },
+    "playerSummaryRegenerate": {
+        "message": "Regenerate",
+        "description": "Button to regenerate summary"
+    },
+    "playerSummaryModelNotReady": {
+        "message": "Summary model is not downloaded. Please enable the summary feature in the Settings page.",
+        "description": "Notice when summary model is not ready"
+    },
+    "playerSummaryModelRedownloadRequired": {
+        "message": "Summary model is missing or corrupted. Please redownload the model from Settings.",
+        "description": "Error message when summary model cache is missing or corrupted"
+    },
+    "playerSummaryNoTranscription": {
+        "message": "No transcription found. Please transcribe the recording first.",
+        "description": "Notice when there is no transcription data to summarize"
     }
 }

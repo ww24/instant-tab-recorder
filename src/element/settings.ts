@@ -42,11 +42,14 @@ import { applyTheme } from '../theme'
 import { t } from '../i18n'
 import { switchLabelStyle } from './switchStyle'
 import { registerFlacEncoder } from '@mediabunny/flac-encoder'
-import { OPFSModelCache } from '../transcription/opfs_model_cache'
-import { ModelDownloader } from '../transcription/model_downloader'
+import { OPFSModelCache } from '../ml/opfs_model_cache'
+import { TRANSCRIPTION_MODEL_CACHE_DIR, TranscriptionModelDownloader } from '../transcription/model_downloader'
+import { REQUIRED_TRANSCRIPTION_MODEL_FILES, TRANSCRIPTION_MODEL_NAME } from '../transcription/model_files'
+import { SUMMARY_MODEL_CACHE_DIR, SummaryModelDownloader } from '../summary/model_downloader'
 import { TRANSCRIPTION_LANGUAGES } from '../transcription/languages'
-import { checkWebGPUSupport } from '../transcription/webgpu'
-import type { WebGPUSupportReason } from '../transcription/webgpu'
+import { checkWebGPUSupport, type WebGPUSupportReason } from '../ml/webgpu'
+import { SUMMARY_MODEL_NAME, REQUIRED_SUMMARY_MODEL_FILES } from '../summary/model_files'
+import { DEFAULT_SUMMARY_PROMPT } from '../summary/prompt'
 
 @customElement('extension-settings')
 export class Settings extends LitElement {
@@ -206,6 +209,20 @@ export class Settings extends LitElement {
                 margin-bottom: 0.5rem;
                 word-break: break-all;
             }
+            .summary-prompt-field {
+                width: 100%;
+                max-width: 600px;
+                min-height: 12rem;
+                margin-top: 0.5rem;
+                margin-bottom: 1rem;
+            }
+            .model-info {
+                font-size: 0.85rem;
+                color: var(--theme-text-secondary, #666);
+                margin-top: -0.5rem;
+                margin-bottom: 0.5rem;
+                user-select: text;
+            }
         `,
     ]
 
@@ -221,16 +238,30 @@ export class Settings extends LitElement {
     @property()
     private encodeErrors: string[] = []
 
-    private readonly modelCache = new OPFSModelCache()
+    private readonly transcriptionModelCache = new OPFSModelCache(
+        TRANSCRIPTION_MODEL_CACHE_DIR,
+        REQUIRED_TRANSCRIPTION_MODEL_FILES,
+    )
 
     @property()
-    private isModelDownloading: boolean = false
+    private isTranscriptionModelDownloading: boolean = false
 
     @property()
-    private downloadProgress: { loaded: number; total: number; file: string } | null = null
+    private transcriptionDownloadProgress: { loaded: number; total: number; file: string } | null = null
 
     @property()
-    private downloadError: string | null = null
+    private transcriptionDownloadError: string | null = null
+
+    private readonly summaryModelCache = new OPFSModelCache(SUMMARY_MODEL_CACHE_DIR, REQUIRED_SUMMARY_MODEL_FILES)
+
+    @property()
+    private isSummaryModelDownloading: boolean = false
+
+    @property()
+    private summaryDownloadProgress: { loaded: number; total: number; file: string } | null = null
+
+    @property()
+    private summaryDownloadError: string | null = null
 
     @property()
     private isWebGPUSupported: boolean = true
@@ -245,9 +276,13 @@ export class Settings extends LitElement {
     private isTogglingTranscription: boolean = false
 
     private transcriptionToggleGeneration: number = 0
+    private summaryToggleGeneration: number = 0
 
     @property()
-    private hasCacheInconsistency: boolean = false
+    private hasTranscriptionCacheInconsistency: boolean = false
+
+    @property()
+    private hasSummaryCacheInconsistency: boolean = false
 
     @property()
     private timerEstimateText: string = ''
@@ -272,7 +307,8 @@ export class Settings extends LitElement {
             console.error('Failed to initialize FLAC encoding support.', error)
         }
         await this.validateEncoding()
-        await this.checkCacheConsistency()
+        await this.checkTranscriptionCacheConsistency()
+        await this.checkSummaryCacheConsistency()
         this.checkAnchorNavigation()
     }
 
@@ -676,35 +712,37 @@ export class Settings extends LitElement {
                     <label
                         class="switch-label"
                         title="${
-                            !this.isWebGPUSupported || this.hasCacheInconsistency
+                            !this.isWebGPUSupported || this.hasTranscriptionCacheInconsistency
                                 ? this.transcriptionHintText
-                                : t('settingsTranscriptionTitle', ModelDownloader.getFormattedTotalSize())
+                                : t('settingsTranscriptionTitle', TranscriptionModelDownloader.getFormattedTotalSize())
                         }">
                         ${t('settingsTranscription')}
                         <md-switch
                             id="transcription"
-                            ?selected=${live((this.config.transcription?.enabled ?? false) || this.isModelDownloading)}
+                            ?selected=${live((this.config.transcription?.enabled ?? false) || this.isTranscriptionModelDownloading)}
                             ?disabled=${live(
                                 !this.isWebGPUSupported || this.isCheckingWebGPU || this.isTogglingTranscription,
                             )}
                             @input=${this.updateTranscriptionEnabled}></md-switch>
                     </label>
-                    <p class="settings-hint ${!this.isWebGPUSupported || this.hasCacheInconsistency ? 'error' : ''}">
+                    <p
+                        class="settings-hint ${!this.isWebGPUSupported || this.hasTranscriptionCacheInconsistency ? 'error' : ''}">
                         ${this.transcriptionHintText}
                     </p>
+                    <p class="model-info">${t('settingsUsedModel', TRANSCRIPTION_MODEL_NAME)}</p>
 
                     ${
-                        this.isModelDownloading
+                        this.isTranscriptionModelDownloading
                             ? html`
                                   <div class="download-progress-area">
                                       <p class="download-progress-label">
                                           ${
-                                              this.downloadProgress
-                                                  ? `${this.downloadProgress.file} (${
-                                                        this.downloadProgress.total > 0
+                                              this.transcriptionDownloadProgress
+                                                  ? `${this.transcriptionDownloadProgress.file} (${
+                                                        this.transcriptionDownloadProgress.total > 0
                                                             ? Math.round(
-                                                                  (this.downloadProgress.loaded /
-                                                                      this.downloadProgress.total) *
+                                                                  (this.transcriptionDownloadProgress.loaded /
+                                                                      this.transcriptionDownloadProgress.total) *
                                                                       100,
                                                               )
                                                             : 0
@@ -713,23 +751,25 @@ export class Settings extends LitElement {
                                           }
                                       </p>
                                       ${
-                                          this.downloadProgress && this.downloadProgress.total > 0
+                                          this.transcriptionDownloadProgress &&
+                                          this.transcriptionDownloadProgress.total > 0
                                               ? html`
                                                     <md-linear-progress
                                                         .value=${
-                                                            this.downloadProgress.loaded / this.downloadProgress.total
+                                                            this.transcriptionDownloadProgress.loaded /
+                                                            this.transcriptionDownloadProgress.total
                                                         }></md-linear-progress>
                                                 `
                                               : html`<md-linear-progress indeterminate></md-linear-progress>`
                                       }
                                   </div>
                               `
-                            : this.downloadError
-                              ? html` <p class="download-error-message">${this.downloadError}</p> `
+                            : this.transcriptionDownloadError
+                              ? html` <p class="download-error-message">${this.transcriptionDownloadError}</p> `
                               : ''
                     }
                     ${
-                        this.config.transcription?.enabled && !this.isModelDownloading
+                        this.config.transcription?.enabled && !this.isTranscriptionModelDownloading
                             ? html`
                                   <div>
                                       <label for="transcription-language" class="field-label">
@@ -748,6 +788,94 @@ export class Settings extends LitElement {
                                           )}
                                       </md-filled-select>
                                   </div>
+
+                                  <label
+                                      class="switch-label"
+                                      title="${
+                                          this.hasSummaryCacheInconsistency
+                                              ? this.summaryHintText
+                                              : t(
+                                                    'settingsSummaryTitle',
+                                                    SummaryModelDownloader.getFormattedTotalSize(),
+                                                )
+                                      }">
+                                      ${t('settingsSummary')}
+                                      <md-switch
+                                          id="summary"
+                                          ?disabled=${live(this.hasTranscriptionCacheInconsistency)}
+                                          ?selected=${live(
+                                              (this.config.summary?.enabled ?? false) || this.isSummaryModelDownloading,
+                                          )}
+                                          @input=${this.updateSummaryEnabled}></md-switch>
+                                  </label>
+                                  <p class="settings-hint ${this.hasSummaryCacheInconsistency ? 'error' : ''}">
+                                      ${this.summaryHintText}
+                                  </p>
+                                  <p class="model-info">${t('settingsUsedModel', SUMMARY_MODEL_NAME)}</p>
+
+                                  ${
+                                      this.config.summary?.enabled && !this.isSummaryModelDownloading
+                                          ? html`
+                                                <div>
+                                                    <label for="summary-prompt" class="field-label">
+                                                        ${t('settingsSummaryPrompt')}
+                                                    </label>
+                                                    <md-filled-text-field
+                                                        id="summary-prompt"
+                                                        class="summary-prompt-field"
+                                                        type="textarea"
+                                                        rows="3"
+                                                        ?disabled=${live(this.hasTranscriptionCacheInconsistency)}
+                                                        .value=${live(
+                                                            this.config.summary?.prompt || DEFAULT_SUMMARY_PROMPT,
+                                                        )}
+                                                        @change=${this.updateProp(
+                                                            'summary',
+                                                            'prompt',
+                                                        )}></md-filled-text-field>
+                                                </div>
+                                            `
+                                          : ''
+                                  }
+                                  ${
+                                      this.isSummaryModelDownloading
+                                          ? html`
+                                                <div class="download-progress-area">
+                                                    <p class="download-progress-label">
+                                                        ${
+                                                            this.summaryDownloadProgress
+                                                                ? `${this.summaryDownloadProgress.file} (${
+                                                                      this.summaryDownloadProgress.total > 0
+                                                                          ? Math.round(
+                                                                                (this.summaryDownloadProgress.loaded /
+                                                                                    this.summaryDownloadProgress
+                                                                                        .total) *
+                                                                                    100,
+                                                                            )
+                                                                          : 0
+                                                                  }%)`
+                                                                : t('settingsSummaryDownloadPending')
+                                                        }
+                                                    </p>
+                                                    ${
+                                                        this.summaryDownloadProgress &&
+                                                        this.summaryDownloadProgress.total > 0
+                                                            ? html`
+                                                                  <md-linear-progress
+                                                                      .value=${
+                                                                          this.summaryDownloadProgress.loaded /
+                                                                          this.summaryDownloadProgress.total
+                                                                      }></md-linear-progress>
+                                                              `
+                                                            : html`<md-linear-progress
+                                                                  indeterminate></md-linear-progress>`
+                                                    }
+                                                </div>
+                                            `
+                                          : this.summaryDownloadError
+                                            ? html` <p class="download-error-message">${this.summaryDownloadError}</p> `
+                                            : ''
+                                  }
                               `
                             : ''
                     }
@@ -931,6 +1059,15 @@ export class Settings extends LitElement {
                             break
                     }
                     break
+                case 'summary':
+                    if (key2 == null) return
+                    switch (key2) {
+                        case 'prompt':
+                            if (!(e.target instanceof MdFilledTextField)) return
+                            this.config[key1][key2] = e.target.value
+                            break
+                    }
+                    break
             }
 
             this.requestUpdate('config', oldVal)
@@ -959,17 +1096,31 @@ export class Settings extends LitElement {
             }
             return t('settingsTranscriptionUnsupportedWebGPU')
         }
-        if (this.hasCacheInconsistency && this.config.transcription?.enabled) {
+        if (this.hasTranscriptionCacheInconsistency && this.config.transcription?.enabled) {
             return t('settingsTranscriptionModelMissingWarning')
         }
-        const modelSize = ModelDownloader.getFormattedTotalSize()
-        if (this.isModelDownloading) {
+        const modelSize = TranscriptionModelDownloader.getFormattedTotalSize()
+        if (this.isTranscriptionModelDownloading) {
             return t('settingsTranscriptionDownloadingHint')
         }
         if (this.config.transcription?.enabled) {
             return t('settingsTranscriptionDisableWarning', modelSize)
         }
         return t('settingsTranscriptionEnableHint', modelSize)
+    }
+
+    private get summaryHintText(): string {
+        if (this.hasSummaryCacheInconsistency && this.config.summary?.enabled) {
+            return t('settingsSummaryModelMissingWarning')
+        }
+        const modelSize = SummaryModelDownloader.getFormattedTotalSize()
+        if (this.isSummaryModelDownloading) {
+            return t('settingsSummaryDownloadingHint')
+        }
+        if (this.config.summary?.enabled) {
+            return t('settingsSummaryDisableWarning', modelSize)
+        }
+        return t('settingsSummaryEnableHint', modelSize)
     }
 
     private get audioSettingsEnabled(): boolean {
@@ -1201,57 +1352,117 @@ export class Settings extends LitElement {
         this.messageListener = (message: Message) => {
             switch (message.type) {
                 case 'model-download-status-response':
-                    if (message.isDownloading) {
-                        this.isModelDownloading = true
-                        if (message.progress) {
-                            this.downloadProgress = {
-                                loaded: message.progress.loaded,
-                                total: message.progress.total,
-                                file: message.progress.file,
+                    if (message.modelType === 'transcription') {
+                        if (message.isDownloading) {
+                            this.isTranscriptionModelDownloading = true
+                            if (message.progress) {
+                                this.transcriptionDownloadProgress = {
+                                    loaded: message.progress.loaded,
+                                    total: message.progress.total,
+                                    file: message.progress.file,
+                                }
                             }
+                        } else if (this.isTranscriptionModelDownloading) {
+                            this.isTranscriptionModelDownloading = false
+                            this.transcriptionDownloadProgress = null
                         }
-                    } else if (this.isModelDownloading) {
-                        this.isModelDownloading = false
-                        this.downloadProgress = null
+                    } else if (message.modelType === 'summary') {
+                        if (message.isDownloading) {
+                            this.isSummaryModelDownloading = true
+                            if (message.progress) {
+                                this.summaryDownloadProgress = {
+                                    loaded: message.progress.loaded,
+                                    total: message.progress.total,
+                                    file: message.progress.file,
+                                }
+                            }
+                        } else if (this.isSummaryModelDownloading) {
+                            this.isSummaryModelDownloading = false
+                            this.summaryDownloadProgress = null
+                        }
                     }
                     this.requestUpdate()
                     break
                 case 'model-download-progress':
-                    this.downloadProgress = {
-                        loaded: message.loaded,
-                        total: message.total,
-                        file: message.file,
+                    if (message.modelType === 'transcription') {
+                        this.transcriptionDownloadProgress = {
+                            loaded: message.loaded,
+                            total: message.total,
+                            file: message.file,
+                        }
+                        this.isTranscriptionModelDownloading = true
+                    } else if (message.modelType === 'summary') {
+                        this.summaryDownloadProgress = {
+                            loaded: message.loaded,
+                            total: message.total,
+                            file: message.file,
+                        }
+                        this.isSummaryModelDownloading = true
                     }
-                    this.isModelDownloading = true
                     this.requestUpdate()
                     break
                 case 'model-download-complete':
-                    this.isModelDownloading = false
-                    this.downloadProgress = null
-                    this.hasCacheInconsistency = false
-                    this.config.transcription.enabled = true
-                    Settings.setConfiguration(this.config)
-                    Settings.syncConfiguration(this.config)
+                    if (message.modelType === 'transcription') {
+                        this.isTranscriptionModelDownloading = false
+                        this.transcriptionDownloadProgress = null
+                        this.hasTranscriptionCacheInconsistency = false
+                        if (this.isUserCancellingTranscriptionDownload) {
+                            this.isUserCancellingTranscriptionDownload = false
+                            this.transcriptionModelCache.clear().catch(() => {})
+                            this.requestUpdate()
+                            break
+                        }
+                        this.config.transcription.enabled = true
+                        Settings.setConfiguration(this.config)
+                        Settings.syncConfiguration(this.config)
+                    } else if (message.modelType === 'summary') {
+                        this.isSummaryModelDownloading = false
+                        this.summaryDownloadProgress = null
+                        this.hasSummaryCacheInconsistency = false
+                        if (this.isUserCancellingSummaryDownload) {
+                            this.isUserCancellingSummaryDownload = false
+                            this.summaryModelCache.clear().catch(() => {})
+                            this.requestUpdate()
+                            break
+                        }
+                        this.config.summary.enabled = true
+                        Settings.setConfiguration(this.config)
+                        Settings.syncConfiguration(this.config)
+                    }
                     this.requestUpdate()
                     break
                 case 'model-download-error':
-                    this.isModelDownloading = false
-                    this.downloadProgress = null
-                    // ユーザーによる意図的なキャンセル（トグルOFF）の場合はエラーを抑制する
-                    if (!this.isUserCancellingDownload && message.error !== 'Model download aborted') {
-                        this.downloadError = message.error
+                    if (message.modelType === 'transcription') {
+                        this.isTranscriptionModelDownloading = false
+                        this.transcriptionDownloadProgress = null
+                        // ユーザーによる意図的なキャンセル（トグルOFF）の場合はエラーを抑制する
+                        if (!this.isUserCancellingTranscriptionDownload && message.error !== 'Model download aborted') {
+                            this.transcriptionDownloadError = message.error
+                        }
+                        this.isUserCancellingTranscriptionDownload = false
+                        this.config.transcription.enabled = false
+                        Settings.setConfiguration(this.config)
+                        Settings.syncConfiguration(this.config)
+                    } else if (message.modelType === 'summary') {
+                        this.isSummaryModelDownloading = false
+                        this.summaryDownloadProgress = null
+                        // ユーザーによる意図的なキャンセル（トグルOFF）の場合はエラーを抑制する
+                        if (!this.isUserCancellingSummaryDownload && message.error !== 'Model download aborted') {
+                            this.summaryDownloadError = message.error
+                        }
+                        this.isUserCancellingSummaryDownload = false
+                        this.config.summary.enabled = false
+                        Settings.setConfiguration(this.config)
+                        Settings.syncConfiguration(this.config)
                     }
-                    this.isUserCancellingDownload = false
-                    this.config.transcription.enabled = false
-                    Settings.setConfiguration(this.config)
-                    Settings.syncConfiguration(this.config)
                     this.requestUpdate()
                     break
             }
         }
         chrome.runtime.onMessage.addListener(this.messageListener)
 
-        this.checkModelDownloadStatus()
+        this.checkTranscriptionModelDownloadStatus()
+        this.checkSummaryModelDownloadStatus()
     }
 
     override disconnectedCallback() {
@@ -1265,9 +1476,9 @@ export class Settings extends LitElement {
         }
     }
 
-    private async checkModelDownloadStatus() {
+    private async checkTranscriptionModelDownloadStatus() {
         try {
-            await chrome.runtime.sendMessage({ type: 'query-model-download-status' })
+            await chrome.runtime.sendMessage({ type: 'query-model-download-status', modelType: 'transcription' })
         } catch (e) {
             console.warn('Failed to query model download status:', e)
         }
@@ -1275,22 +1486,44 @@ export class Settings extends LitElement {
 
     /**
      * Checks whether the transcription model cache is complete when transcription is enabled.
-     * Sets hasCacheInconsistency flag and triggers update if inconsistency is detected.
+     * Sets hasTranscriptionCacheInconsistency flag and triggers update if inconsistency is detected.
      */
-    public async checkCacheConsistency(): Promise<boolean> {
-        if (!this.config.transcription?.enabled || this.isModelDownloading) {
-            this.hasCacheInconsistency = false
+    public async checkTranscriptionCacheConsistency(): Promise<boolean> {
+        if (!this.config.transcription?.enabled || this.isTranscriptionModelDownloading) {
+            this.hasTranscriptionCacheInconsistency = false
             return true
         }
 
-        const hasCache = await this.modelCache.hasCache()
-        if (!this.config.transcription?.enabled || this.isModelDownloading) {
-            this.hasCacheInconsistency = false
+        const hasCache = await this.transcriptionModelCache.hasCache()
+        if (!this.config.transcription?.enabled || this.isTranscriptionModelDownloading) {
+            this.hasTranscriptionCacheInconsistency = false
             this.requestUpdate()
             return true
         }
 
-        this.hasCacheInconsistency = !hasCache
+        this.hasTranscriptionCacheInconsistency = !hasCache
+        this.requestUpdate()
+        return hasCache
+    }
+
+    /**
+     * Checks whether the summary model cache is complete when summary is enabled.
+     * Sets hasSummaryCacheInconsistency flag and triggers update if inconsistency is detected.
+     */
+    public async checkSummaryCacheConsistency(): Promise<boolean> {
+        if (!this.config.summary?.enabled || this.isSummaryModelDownloading) {
+            this.hasSummaryCacheInconsistency = false
+            return true
+        }
+
+        const hasCache = await this.summaryModelCache.hasCache()
+        if (!this.config.summary?.enabled || this.isSummaryModelDownloading) {
+            this.hasSummaryCacheInconsistency = false
+            this.requestUpdate()
+            return true
+        }
+
+        this.hasSummaryCacheInconsistency = !hasCache
         this.requestUpdate()
         return hasCache
     }
@@ -1300,7 +1533,8 @@ export class Settings extends LitElement {
      */
     public async setTabActive(isActive: boolean) {
         if (isActive) {
-            await this.checkCacheConsistency()
+            await this.checkTranscriptionCacheConsistency()
+            await this.checkSummaryCacheConsistency()
             this.checkAnchorNavigation()
         }
     }
@@ -1311,6 +1545,8 @@ export class Settings extends LitElement {
         const targetId = hash.startsWith('#') ? hash.slice(1) : hash
         if (targetId === 'transcription') {
             this.scrollToTranscriptionSwitch()
+        } else if (targetId === 'summary') {
+            this.scrollToSummarySwitch()
         }
     }
 
@@ -1326,8 +1562,29 @@ export class Settings extends LitElement {
         })
     }
 
+    private scrollToSummarySwitch() {
+        requestAnimationFrame(() => {
+            const switchEl = this.shadowRoot?.querySelector('#summary')
+            if (switchEl) {
+                switchEl.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                if ('focus' in switchEl && typeof switchEl.focus === 'function') {
+                    switchEl.focus()
+                }
+            }
+        })
+    }
+
+    private async checkSummaryModelDownloadStatus() {
+        try {
+            await chrome.runtime.sendMessage({ type: 'query-model-download-status', modelType: 'summary' })
+        } catch (e) {
+            console.warn('Failed to query summary model download status:', e)
+        }
+    }
+
     /** ユーザーが意図的にトグルOFFでキャンセルしたことを示すフラグ（エラー抑制用） */
-    private isUserCancellingDownload = false
+    private isUserCancellingTranscriptionDownload = false
+    private isUserCancellingSummaryDownload = false
 
     private async updateTranscriptionEnabled(e: Event) {
         const target = e.target
@@ -1340,7 +1597,7 @@ export class Settings extends LitElement {
 
         try {
             if (enabled) {
-                this.downloadError = null
+                this.transcriptionDownloadError = null
                 this.isCheckingWebGPU = true
                 this.requestUpdate()
 
@@ -1363,42 +1620,48 @@ export class Settings extends LitElement {
                 }
 
                 // トグルON: モデルがキャッシュ済みならそのまま有効化、未キャッシュなら即ダウンロード開始
-                const isCached = await this.modelCache.hasCache()
+                const isCached = await this.transcriptionModelCache.hasCache()
                 if (this.transcriptionToggleGeneration !== currentGen) return
 
                 if (!isCached) {
-                    this.isModelDownloading = true
-                    this.downloadProgress = null
+                    this.isTranscriptionModelDownloading = true
+                    this.transcriptionDownloadProgress = null
                     this.requestUpdate()
                     try {
-                        await chrome.runtime.sendMessage({ type: 'start-model-download' })
+                        await chrome.runtime.sendMessage({
+                            type: 'start-model-download',
+                            modelType: 'transcription',
+                        })
                     } catch (err) {
                         if (this.transcriptionToggleGeneration !== currentGen) return
                         console.warn('Failed to send start-model-download message:', err)
-                        this.isModelDownloading = false
-                        this.downloadProgress = null
-                        this.downloadError = err instanceof Error ? err.message : String(err)
+                        this.isTranscriptionModelDownloading = false
+                        this.transcriptionDownloadProgress = null
+                        this.transcriptionDownloadError = err instanceof Error ? err.message : String(err)
                         this.requestUpdate()
                     }
                     return
                 }
-            } else if (this.isModelDownloading) {
+            } else if (this.isTranscriptionModelDownloading) {
                 // トグルOFF（ダウンロード中）: ユーザーキャンセル
-                this.isUserCancellingDownload = true
-                this.isModelDownloading = false
-                this.downloadProgress = null
-                this.downloadError = null
+                this.isUserCancellingTranscriptionDownload = true
+                this.isTranscriptionModelDownloading = false
+                this.transcriptionDownloadProgress = null
+                this.transcriptionDownloadError = null
                 this.requestUpdate()
                 try {
-                    await chrome.runtime.sendMessage({ type: 'cancel-model-download' })
+                    await chrome.runtime.sendMessage({
+                        type: 'cancel-model-download',
+                        modelType: 'transcription',
+                    })
                 } catch (err) {
                     console.warn('Failed to send cancel-model-download message:', err)
                 }
             } else {
                 // トグルOFF（キャッシュ済み or 無効状態）: キャッシュ削除
-                await this.modelCache.clear()
+                await this.transcriptionModelCache.clear()
                 if (this.transcriptionToggleGeneration !== currentGen) return
-                this.hasCacheInconsistency = false
+                this.hasTranscriptionCacheInconsistency = false
                 this.requestUpdate()
             }
 
@@ -1415,6 +1678,103 @@ export class Settings extends LitElement {
                 this.requestUpdate()
             }
         }
+
+        // 親の文字起こしが無効化された場合、要約も自動的に無効化・キャッシュ解放
+        if (!enabled) {
+            ++this.summaryToggleGeneration
+            if (this.isSummaryModelDownloading) {
+                this.isUserCancellingSummaryDownload = true
+                this.isSummaryModelDownloading = false
+                this.summaryDownloadProgress = null
+                try {
+                    await chrome.runtime.sendMessage({
+                        type: 'cancel-model-download',
+                        modelType: 'summary',
+                    })
+                } catch (err) {
+                    console.warn('Failed to send cancel-model-download message:', err)
+                }
+            }
+            if (this.config.summary.enabled) {
+                this.config.summary.enabled = false
+                this.hasSummaryCacheInconsistency = false
+                await this.summaryModelCache.clear()
+            }
+        }
+
+        const oldVal = { ...this.config }
+        this.config.transcription.enabled = enabled
+        this.requestUpdate('config', oldVal)
+        Settings.setConfiguration(this.config)
+        await Settings.syncConfiguration(this.config)
+    }
+
+    private async updateSummaryEnabled(e: Event) {
+        const target = e.target
+        if (!(target instanceof MdSwitch)) return
+        if (this.hasTranscriptionCacheInconsistency && target.selected) {
+            target.selected = false
+            return
+        }
+        const enabled = target.selected
+
+        const currentGen = ++this.summaryToggleGeneration
+
+        if (enabled) {
+            // トグルON: モデルがキャッシュ済みならそのまま有効化、未キャッシュなら即ダウンロード開始
+            this.summaryDownloadError = null
+            const isCached = await this.summaryModelCache.hasCache()
+            if (this.summaryToggleGeneration !== currentGen) return
+
+            if (!isCached) {
+                this.isSummaryModelDownloading = true
+                this.summaryDownloadProgress = null
+                this.requestUpdate()
+                try {
+                    await chrome.runtime.sendMessage({
+                        type: 'start-model-download',
+                        modelType: 'summary',
+                    })
+                } catch (err) {
+                    if (this.summaryToggleGeneration !== currentGen) return
+                    console.warn('Failed to send start-model-download message:', err)
+                    this.isSummaryModelDownloading = false
+                    this.summaryDownloadProgress = null
+                    this.summaryDownloadError = err instanceof Error ? err.message : String(err)
+                    this.requestUpdate()
+                }
+                return
+            }
+        } else if (this.isSummaryModelDownloading) {
+            // トグルOFF（ダウンロード中）: ユーザーキャンセル
+            this.isUserCancellingSummaryDownload = true
+            this.isSummaryModelDownloading = false
+            this.summaryDownloadProgress = null
+            this.summaryDownloadError = null
+            this.requestUpdate()
+            try {
+                await chrome.runtime.sendMessage({
+                    type: 'cancel-model-download',
+                    modelType: 'summary',
+                })
+            } catch (err) {
+                console.warn('Failed to send cancel-model-download message:', err)
+            }
+        } else {
+            // トグルOFF（キャッシュ済み or 無効状態）: キャッシュ削除
+            await this.summaryModelCache.clear()
+            if (this.summaryToggleGeneration !== currentGen) return
+            this.hasSummaryCacheInconsistency = false
+            this.requestUpdate()
+        }
+
+        if (this.summaryToggleGeneration !== currentGen) return
+
+        const oldVal = { ...this.config }
+        this.config.summary.enabled = enabled
+        this.requestUpdate('config', oldVal)
+        Settings.setConfiguration(this.config)
+        await Settings.syncConfiguration(this.config)
     }
 }
 

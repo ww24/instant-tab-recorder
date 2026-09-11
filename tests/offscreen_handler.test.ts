@@ -928,15 +928,16 @@ describe('start-model-download', () => {
             getProgress: vi.fn().mockReturnValue(null),
         }
         const deps = createMockDeps({
-            modelDownloader: mockModelDownloader as any,
+            transcriptionModelDownloader: mockModelDownloader as any,
         })
         const handler = new OffscreenHandler(deps)
 
-        await handler.handleMessage({ type: 'start-model-download' })
+        await handler.handleMessage({ type: 'start-model-download', modelType: 'transcription' })
 
         expect(mockModelDownloader.download).toHaveBeenCalled()
         expect(deps.sendRuntimeMessage).toHaveBeenCalledWith({
             type: 'model-download-progress',
+            modelType: 'transcription',
             loaded: 50,
             total: 100,
             file: 'test.onnx',
@@ -951,6 +952,7 @@ describe('start-model-download', () => {
         })
         expect(deps.sendRuntimeMessage).toHaveBeenCalledWith({
             type: 'model-download-complete',
+            modelType: 'transcription',
         })
     })
 
@@ -963,16 +965,17 @@ describe('start-model-download', () => {
             getProgress: vi.fn().mockReturnValue(null),
         }
         const deps = createMockDeps({
-            modelDownloader: mockModelDownloader as any,
+            transcriptionModelDownloader: mockModelDownloader as any,
         })
         const handler = new OffscreenHandler(deps)
 
-        await handler.handleMessage({ type: 'start-model-download' })
+        await handler.handleMessage({ type: 'start-model-download', modelType: 'transcription' })
 
         expect(mockModelDownloader.clearCache).toHaveBeenCalled()
         expect(deps.sendEvent).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'model_download_complete' }))
         expect(deps.sendRuntimeMessage).toHaveBeenCalledWith({
             type: 'model-download-error',
+            modelType: 'transcription',
             error: 'Model download aborted',
         })
     })
@@ -987,34 +990,74 @@ describe('start-model-download', () => {
             getProgress: vi.fn().mockReturnValue(null),
         }
         const deps = createMockDeps({
-            modelDownloader: mockModelDownloader as any,
+            transcriptionModelDownloader: mockModelDownloader as any,
         })
         const handler = new OffscreenHandler(deps)
 
-        await handler.handleMessage({ type: 'start-model-download' })
+        await handler.handleMessage({ type: 'start-model-download', modelType: 'transcription' })
 
         expect(deps.sendException).toHaveBeenCalledWith(downloadErr, {
             exceptionSource: 'offscreen.handleStartModelDownload',
         })
         expect(deps.sendRuntimeMessage).toHaveBeenCalledWith({
             type: 'model-download-error',
+            modelType: 'transcription',
             error: 'Network error',
         })
     })
 
     it('does nothing when modelDownloader is not provided', async () => {
-        const deps = createMockDeps({ modelDownloader: undefined })
+        const deps = createMockDeps({ transcriptionModelDownloader: undefined })
         const handler = new OffscreenHandler(deps)
 
-        await handler.handleMessage({ type: 'start-model-download' })
+        await handler.handleMessage({ type: 'start-model-download', modelType: 'transcription' })
 
         expect(deps.sendEvent).not.toHaveBeenCalled()
         expect(deps.sendRuntimeMessage).not.toHaveBeenCalled()
     })
+
+    it('downloads summary model when modelType is summary', async () => {
+        const mockSummaryModelDownloader = {
+            download: vi.fn().mockImplementation(async (onProgress?: (p: any) => void) => {
+                onProgress?.({
+                    loaded: 30,
+                    total: 60,
+                    file: 'summary.onnx',
+                    fileIndex: 1,
+                    totalFiles: 1,
+                })
+            }),
+            abort: vi.fn(),
+            clearCache: vi.fn().mockResolvedValue(undefined),
+            isDownloading: false,
+            getProgress: vi.fn().mockReturnValue(null),
+        }
+        const deps = createMockDeps({
+            summaryModelDownloader: mockSummaryModelDownloader as any,
+        })
+        const handler = new OffscreenHandler(deps)
+
+        await handler.handleMessage({ type: 'start-model-download', modelType: 'summary' })
+
+        expect(mockSummaryModelDownloader.download).toHaveBeenCalled()
+        expect(deps.sendRuntimeMessage).toHaveBeenCalledWith({
+            type: 'model-download-progress',
+            modelType: 'summary',
+            loaded: 30,
+            total: 60,
+            file: 'summary.onnx',
+            fileIndex: 1,
+            totalFiles: 1,
+        })
+        expect(deps.sendRuntimeMessage).toHaveBeenCalledWith({
+            type: 'model-download-complete',
+            modelType: 'summary',
+        })
+    })
 })
 
 describe('cancel-model-download', () => {
-    it('aborts download and clears cache', async () => {
+    it('aborts download and clears cache for transcription', async () => {
         const mockModelDownloader = {
             download: vi.fn(),
             abort: vi.fn(),
@@ -1023,14 +1066,33 @@ describe('cancel-model-download', () => {
             getProgress: vi.fn().mockReturnValue(null),
         }
         const deps = createMockDeps({
-            modelDownloader: mockModelDownloader as any,
+            transcriptionModelDownloader: mockModelDownloader as any,
         })
         const handler = new OffscreenHandler(deps)
 
-        await handler.handleMessage({ type: 'cancel-model-download' })
+        await handler.handleMessage({ type: 'cancel-model-download', modelType: 'transcription' })
 
         expect(mockModelDownloader.abort).toHaveBeenCalled()
         expect(mockModelDownloader.clearCache).toHaveBeenCalled()
+    })
+
+    it('aborts download and clears cache for summary', async () => {
+        const mockSummaryModelDownloader = {
+            download: vi.fn(),
+            abort: vi.fn(),
+            clearCache: vi.fn().mockResolvedValue(undefined),
+            isDownloading: false,
+            getProgress: vi.fn().mockReturnValue(null),
+        }
+        const deps = createMockDeps({
+            summaryModelDownloader: mockSummaryModelDownloader as any,
+        })
+        const handler = new OffscreenHandler(deps)
+
+        await handler.handleMessage({ type: 'cancel-model-download', modelType: 'summary' })
+
+        expect(mockSummaryModelDownloader.abort).toHaveBeenCalled()
+        expect(mockSummaryModelDownloader.clearCache).toHaveBeenCalled()
     })
 })
 
@@ -1051,14 +1113,15 @@ describe('query-model-download-status', () => {
             getProgress: vi.fn().mockReturnValue(progress),
         }
         const deps = createMockDeps({
-            modelDownloader: mockModelDownloader as any,
+            transcriptionModelDownloader: mockModelDownloader as any,
         })
         const handler = new OffscreenHandler(deps)
 
-        await handler.handleMessage({ type: 'query-model-download-status' })
+        await handler.handleMessage({ type: 'query-model-download-status', modelType: 'transcription' })
 
         expect(deps.sendRuntimeMessage).toHaveBeenCalledWith({
             type: 'model-download-status-response',
+            modelType: 'transcription',
             isDownloading: true,
             progress: {
                 loaded: 100,
@@ -1067,6 +1130,29 @@ describe('query-model-download-status', () => {
                 fileIndex: 1,
                 totalFiles: 1,
             },
+        })
+    })
+
+    it('responds with download status and progress for summary', async () => {
+        const mockSummaryModelDownloader = {
+            download: vi.fn(),
+            abort: vi.fn(),
+            clearCache: vi.fn(),
+            isDownloading: false,
+            getProgress: vi.fn().mockReturnValue(null),
+        }
+        const deps = createMockDeps({
+            summaryModelDownloader: mockSummaryModelDownloader as any,
+        })
+        const handler = new OffscreenHandler(deps)
+
+        await handler.handleMessage({ type: 'query-model-download-status', modelType: 'summary' })
+
+        expect(deps.sendRuntimeMessage).toHaveBeenCalledWith({
+            type: 'model-download-status-response',
+            modelType: 'summary',
+            isDownloading: false,
+            progress: null,
         })
     })
 })
@@ -1112,7 +1198,7 @@ describe('offscreen document lifecycle (closeDocument)', () => {
             getProgress: vi.fn().mockReturnValue(null),
         }
         const deps = createMockDeps({
-            modelDownloader: mockModelDownloader as any,
+            transcriptionModelDownloader: mockModelDownloader as any,
         })
         deps.setLocationHash('#recording')
         const handler = new OffscreenHandler(deps)
@@ -1214,11 +1300,11 @@ describe('offscreen document lifecycle (closeDocument)', () => {
             getProgress: vi.fn().mockReturnValue(null),
         }
         const deps = createMockDeps({
-            modelDownloader: mockModelDownloader as any,
+            transcriptionModelDownloader: mockModelDownloader as any,
         })
         const handler = new OffscreenHandler(deps)
 
-        await handler.handleMessage({ type: 'start-model-download' })
+        await handler.handleMessage({ type: 'start-model-download', modelType: 'transcription' })
 
         expect(deps.closeDocument).toHaveBeenCalledTimes(1)
     })
@@ -1232,12 +1318,48 @@ describe('offscreen document lifecycle (closeDocument)', () => {
             getProgress: vi.fn().mockReturnValue(null),
         }
         const deps = createMockDeps({
-            modelDownloader: mockModelDownloader as any,
+            transcriptionModelDownloader: mockModelDownloader as any,
         })
         const handler = new OffscreenHandler(deps)
 
-        await handler.handleMessage({ type: 'cancel-model-download' })
+        await handler.handleMessage({ type: 'cancel-model-download', modelType: 'transcription' })
 
+        expect(deps.closeDocument).toHaveBeenCalledTimes(1)
+    })
+})
+
+// ---------- cancel-tasks-for-path ----------
+
+describe('cancel-tasks-for-path', () => {
+    it('cancels transcription and summary sessions and returns Promise<void>', async () => {
+        const mockTranscriptionSession = {
+            isTranscribing: vi.fn().mockReturnValue(false),
+            hasActiveTasks: vi.fn().mockReturnValue(false),
+            transcribe: vi.fn(),
+            cancel: vi.fn(),
+        }
+        const mockSummarySession = {
+            isSummarizing: vi.fn().mockReturnValue(false),
+            hasActiveTasks: vi.fn().mockReturnValue(false),
+            summarize: vi.fn(),
+            cancel: vi.fn(),
+        }
+        const deps = createMockDeps({
+            transcriptionSession: mockTranscriptionSession as any,
+            summarySession: mockSummarySession as any,
+        })
+        const handler = new OffscreenHandler(deps)
+
+        const result = handler.handleMessage({
+            type: 'cancel-tasks-for-path',
+            path: 'video-1000.webm',
+        })
+
+        expect(result).toBeInstanceOf(Promise)
+        await result
+
+        expect(mockTranscriptionSession.cancel).toHaveBeenCalledWith('video-1000.webm')
+        expect(mockSummarySession.cancel).toHaveBeenCalledWith('video-1000.webm')
         expect(deps.closeDocument).toHaveBeenCalledTimes(1)
     })
 })

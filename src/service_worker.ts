@@ -533,7 +533,9 @@ self.addEventListener('fetch', (event: FetchEvent) => {
     if (url.origin === location.origin && url.pathname.startsWith(API_PREFIX)) {
         event.respondWith(
             (async () => {
-                return handleApiRequest(event.request, recordingStorage, await getRecordingState(), recordingDB)
+                return handleApiRequest(event.request, recordingStorage, await getRecordingState(), recordingDB, msg =>
+                    chrome.runtime.sendMessage(msg),
+                )
             })(),
         )
     }

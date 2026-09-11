@@ -103,6 +103,13 @@ describe('parseApiPath', () => {
             ext: '.srt',
         })
     })
+
+    it('should parse /api/recordings/:name/summary', () => {
+        expect(parseApiPath('/api/recordings/video-1000.webm/summary')).toEqual({
+            route: 'summary',
+            name: 'video-1000.webm',
+        })
+    })
 })
 
 // ---------- handleApiRequest – storage-estimate ----------
@@ -496,6 +503,101 @@ describe('handleApiRequest – recording DELETE', () => {
         expect(res.status).toBe(409)
         expect(storage.delete).not.toHaveBeenCalled()
         expect(recordingDB.delete).not.toHaveBeenCalled()
+    })
+
+    it('should dispatch and await cancel-tasks-for-path before deleting data', async () => {
+        const record: RecordingRecord = {
+            recordedAt: 1000,
+            mainFilePath: 'video-1000.webm',
+            mimeType: 'video/webm',
+            title: 'video-1000.webm',
+            status: 'completed',
+            durationMs: 5000,
+            fileSize: 12345,
+            subFiles: [],
+        }
+        const callOrder: string[] = []
+        const recordingDB = createMockRecordingDB({
+            get: vi.fn().mockResolvedValue(record),
+            delete: vi.fn().mockImplementation(async () => {
+                callOrder.push('recordingDB.delete')
+            }),
+        })
+        const storage = createMockStorage({
+            delete: vi.fn().mockImplementation(async () => {
+                callOrder.push('storage.delete')
+            }),
+        })
+        const sendRuntimeMessage = vi.fn().mockImplementation(async () => {
+            callOrder.push('sendRuntimeMessage')
+        })
+        const req = new Request('https://ext.example/api/recordings/video-1000.webm', { method: 'DELETE' })
+        const recordingState: RecordingState = { isRecording: false, startAtMs: 0 }
+        const res = await handleApiRequest(req, storage, recordingState, recordingDB, sendRuntimeMessage)
+
+        expect(res.status).toBe(204)
+        expect(sendRuntimeMessage).toHaveBeenCalledWith({
+            type: 'cancel-tasks-for-path',
+            path: 'video-1000.webm',
+        })
+        expect(recordingDB.delete).toHaveBeenCalledWith(1000)
+        expect(callOrder[0]).toBe('sendRuntimeMessage')
+        expect(callOrder).toContain('storage.delete')
+        expect(callOrder).toContain('recordingDB.delete')
+    })
+
+    it('should continue deletion even if sendRuntimeMessage fails', async () => {
+        const record: RecordingRecord = {
+            recordedAt: 1000,
+            mainFilePath: 'video-1000.webm',
+            mimeType: 'video/webm',
+            title: 'video-1000.webm',
+            status: 'completed',
+            durationMs: 5000,
+            fileSize: 12345,
+            subFiles: [],
+        }
+        const recordingDB = createMockRecordingDB({
+            get: vi.fn().mockResolvedValue(record),
+        })
+        const storage = createMockStorage()
+        const sendRuntimeMessage = vi.fn().mockRejectedValue(new Error('No receiver'))
+        const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        const req = new Request('https://ext.example/api/recordings/video-1000.webm', { method: 'DELETE' })
+        const recordingState: RecordingState = { isRecording: false, startAtMs: 0 }
+        const res = await handleApiRequest(req, storage, recordingState, recordingDB, sendRuntimeMessage)
+
+        expect(res.status).toBe(204)
+        expect(sendRuntimeMessage).toHaveBeenCalledWith({
+            type: 'cancel-tasks-for-path',
+            path: 'video-1000.webm',
+        })
+        expect(storage.delete).toHaveBeenCalledWith('video-1000.webm')
+        expect(recordingDB.delete).toHaveBeenCalledWith(1000)
+        expect(warnSpy).toHaveBeenCalled()
+        warnSpy.mockRestore()
+    })
+
+    it('should not send cancel-tasks-for-path when sendRuntimeMessage is not provided', async () => {
+        const record: RecordingRecord = {
+            recordedAt: 1000,
+            mainFilePath: 'video-1000.webm',
+            mimeType: 'video/webm',
+            title: 'video-1000.webm',
+            status: 'completed',
+            durationMs: 5000,
+            fileSize: 12345,
+            subFiles: [],
+        }
+        const recordingDB = createMockRecordingDB({
+            get: vi.fn().mockResolvedValue(record),
+        })
+        const storage = createMockStorage()
+        const req = new Request('https://ext.example/api/recordings/video-1000.webm', { method: 'DELETE' })
+        const recordingState: RecordingState = { isRecording: false, startAtMs: 0 }
+        // No sendRuntimeMessage provided — should not throw
+        const res = await handleApiRequest(req, storage, recordingState, recordingDB)
+        expect(res.status).toBe(204)
     })
 })
 
@@ -1193,5 +1295,147 @@ describe('handleApiRequest – transcription', () => {
         expect(res.headers.get('Content-Type')).toBe('application/x-subrip; charset=utf-8')
         const text = await res.text()
         expect(text).toContain('1\n00:00:01,000 --> 00:00:03,500\nHello world')
+    })
+})
+
+describe('handleApiRequest – summary', () => {
+    const mockSummary = {
+        text: 'Summary of the recording.',
+        summarizedAt: 2000,
+        modelId: 'onnx-community/gemma-4-E4B-it-ONNX',
+    }
+
+    const baseRecord: RecordingRecord = {
+        recordedAt: 1000,
+        mainFilePath: 'video-1000.webm',
+        mimeType: 'video/webm',
+        title: 'video-1000.webm',
+        status: 'completed',
+        durationMs: 5000,
+        fileSize: 100,
+        subFiles: [],
+    }
+
+    const recordWithSummary: RecordingRecord = {
+        ...baseRecord,
+        summary: mockSummary,
+    }
+
+    it('should return summary on GET when available', async () => {
+        const recordingDB = createMockRecordingDB({
+            get: vi.fn().mockResolvedValue(recordWithSummary),
+        })
+        const storage = createMockStorage()
+        const req = new Request('https://ext.example/api/recordings/video-1000.webm/summary')
+        const recordingState: RecordingState = { isRecording: false, startAtMs: 0 }
+        const res = await handleApiRequest(req, storage, recordingState, recordingDB)
+
+        expect(res.status).toBe(200)
+        expect(res.headers.get('Content-Type')).toBe('application/json')
+        expect(await res.json()).toEqual(mockSummary)
+    })
+
+    it('should return 404 on GET when summary does not exist', async () => {
+        const recordingDB = createMockRecordingDB({
+            get: vi.fn().mockResolvedValue(baseRecord),
+        })
+        const storage = createMockStorage()
+        const req = new Request('https://ext.example/api/recordings/video-1000.webm/summary')
+        const recordingState: RecordingState = { isRecording: false, startAtMs: 0 }
+        const res = await handleApiRequest(req, storage, recordingState, recordingDB)
+
+        expect(res.status).toBe(404)
+        expect(await res.json()).toEqual({ error: 'Summary not found' })
+    })
+
+    it('should return 404 on GET when recording record does not exist', async () => {
+        const recordingDB = createMockRecordingDB({
+            get: vi.fn().mockResolvedValue(undefined),
+        })
+        const storage = createMockStorage()
+        const req = new Request('https://ext.example/api/recordings/video-1000.webm/summary')
+        const recordingState: RecordingState = { isRecording: false, startAtMs: 0 }
+        const res = await handleApiRequest(req, storage, recordingState, recordingDB)
+
+        expect(res.status).toBe(404)
+        expect(await res.json()).toEqual({ error: 'Invalid recording name' })
+    })
+
+    it('should save summary on PUT', async () => {
+        const putMock = vi.fn().mockResolvedValue(undefined)
+        const recordingDB = createMockRecordingDB({
+            get: vi.fn().mockResolvedValue(baseRecord),
+            put: putMock,
+        })
+        const storage = createMockStorage()
+        const req = new Request('https://ext.example/api/recordings/video-1000.webm/summary', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(mockSummary),
+        })
+        const recordingState: RecordingState = { isRecording: false, startAtMs: 0 }
+        const res = await handleApiRequest(req, storage, recordingState, recordingDB)
+
+        expect(res.status).toBe(204)
+        expect(putMock).toHaveBeenCalledWith(
+            expect.objectContaining({
+                recordedAt: 1000,
+                summary: mockSummary,
+            }),
+        )
+    })
+
+    it('should return 400 on PUT with invalid summary payload', async () => {
+        const recordingDB = createMockRecordingDB({
+            get: vi.fn().mockResolvedValue(baseRecord),
+        })
+        const storage = createMockStorage()
+        const req = new Request('https://ext.example/api/recordings/video-1000.webm/summary', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: 123 }),
+        })
+        const recordingState: RecordingState = { isRecording: false, startAtMs: 0 }
+        const res = await handleApiRequest(req, storage, recordingState, recordingDB)
+
+        expect(res.status).toBe(400)
+        expect(await res.json()).toEqual({ error: 'Invalid summary payload' })
+    })
+
+    it('should delete summary on DELETE', async () => {
+        const putMock = vi.fn().mockResolvedValue(undefined)
+        const recordingDB = createMockRecordingDB({
+            get: vi.fn().mockResolvedValue(recordWithSummary),
+            put: putMock,
+        })
+        const storage = createMockStorage()
+        const req = new Request('https://ext.example/api/recordings/video-1000.webm/summary', {
+            method: 'DELETE',
+        })
+        const recordingState: RecordingState = { isRecording: false, startAtMs: 0 }
+        const res = await handleApiRequest(req, storage, recordingState, recordingDB)
+
+        expect(res.status).toBe(204)
+        expect(putMock).toHaveBeenCalledWith(
+            expect.objectContaining({
+                recordedAt: 1000,
+                summary: undefined,
+            }),
+        )
+    })
+
+    it('should return 405 for unsupported method on summary route', async () => {
+        const recordingDB = createMockRecordingDB({
+            get: vi.fn().mockResolvedValue(baseRecord),
+        })
+        const storage = createMockStorage()
+        const req = new Request('https://ext.example/api/recordings/video-1000.webm/summary', {
+            method: 'POST',
+        })
+        const recordingState: RecordingState = { isRecording: false, startAtMs: 0 }
+        const res = await handleApiRequest(req, storage, recordingState, recordingDB)
+
+        expect(res.status).toBe(405)
+        expect(await res.json()).toEqual({ error: 'Method Not Allowed' })
     })
 })

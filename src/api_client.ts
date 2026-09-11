@@ -1,6 +1,7 @@
 import type { RecordingMetadata, StorageEstimateInfo, ListRecordingsOptions } from './storage'
 import type { ClaimClientsMessage } from './message'
 import type { TranscriptionResult } from './transcription/types'
+import type { SummaryResult } from './summary/types'
 
 const API_BASE = '/api'
 const CLAIM_TIMEOUT_MS = 2000
@@ -184,6 +185,56 @@ export class RecordingApiClient {
             return
         }
         throw new Error(`Failed to delete transcription: ${response.status}`)
+    }
+
+    /**
+     * Get summary for a recording
+     */
+    async getSummary(name: string): Promise<SummaryResult | null> {
+        await ensureControlled()
+        const encodedName = encodeURIComponent(name)
+        const response = await fetch(`${API_BASE}/recordings/${encodedName}/summary`)
+        if (response.status === 404) {
+            return null
+        }
+        if (!response.ok) {
+            throw new Error(`Failed to get summary: ${response.status}`)
+        }
+        return response.json()
+    }
+
+    /**
+     * Save summary for a recording
+     */
+    async saveSummary(name: string, summary: SummaryResult): Promise<void> {
+        await ensureControlled()
+        const encodedName = encodeURIComponent(name)
+        const response = await fetch(`${API_BASE}/recordings/${encodedName}/summary`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(summary),
+        })
+        if (response.status === 204 || response.ok) {
+            return
+        }
+        throw new Error(`Failed to save summary: ${response.status}`)
+    }
+
+    /**
+     * Delete summary for a recording
+     */
+    async deleteSummary(name: string): Promise<void> {
+        await ensureControlled()
+        const encodedName = encodeURIComponent(name)
+        const response = await fetch(`${API_BASE}/recordings/${encodedName}/summary`, {
+            method: 'DELETE',
+        })
+        if (response.status === 204 || response.ok) {
+            return
+        }
+        throw new Error(`Failed to delete summary: ${response.status}`)
     }
 
     /**

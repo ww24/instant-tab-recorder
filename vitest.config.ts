@@ -2,6 +2,9 @@ import { defineConfig } from 'vitest/config'
 import { playwright } from '@vitest/browser-playwright'
 
 export default defineConfig({
+    optimizeDeps: {
+        include: ['marked', 'lit/directives/unsafe-html.js'],
+    },
     test: {
         globals: true,
         coverage: {

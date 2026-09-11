@@ -126,4 +126,102 @@ describe('TranscriptionSession', () => {
             error: 'File not found',
         })
     })
+
+    it('terminates worker and broadcasts error on worker error event', async () => {
+        const originalError = new Error('Transcription worker crashed')
+        mockWorker.postMessage = vi.fn((msg: any) => {
+            if (msg.type === 'init') {
+                setTimeout(() => {
+                    messageListeners['message']?.forEach(fn => fn({ data: { type: 'ready' } }))
+                }, 0)
+            } else if (msg.type === 'transcribe') {
+                setTimeout(() => {
+                    messageListeners['error']?.forEach(fn =>
+                        fn({ message: 'Transcription worker crashed', error: originalError }),
+                    )
+                }, 0)
+            }
+        })
+
+        const session = new TranscriptionSession(deps)
+        const promise = session.transcribe('rec.webm')
+
+        let caughtError: Error | null = null
+        try {
+            await promise
+        } catch (err: any) {
+            caughtError = err
+        }
+
+        expect(caughtError).toBeInstanceOf(Error)
+        expect(caughtError?.message).toBe('Transcription worker: Transcription worker crashed')
+        expect((caughtError as any)?.cause).toBe(originalError)
+
+        expect(deps.broadcastMessage).toHaveBeenCalledWith({
+            type: 'transcription-error',
+            path: 'rec.webm',
+            error: 'Transcription worker: Transcription worker crashed',
+        })
+        expect(mockWorker.terminate).toHaveBeenCalled()
+        expect(session.isTranscribing('rec.webm')).toBe(false)
+    })
+
+    it('cancel() settles transcribe() immediately via AbortController and terminates the worker', async () => {
+        // Override postMessage so the worker never auto-completes
+        mockWorker.postMessage = vi.fn()
+        const session = new TranscriptionSession(deps)
+
+        const promise = session.transcribe('rec.webm')
+        expect(session.isTranscribing('rec.webm')).toBe(true)
+
+        // Wait for the worker to be created (audio extraction has resolved by this point)
+        await vi.waitFor(() => {
+            expect(mockWorker.postMessage).toHaveBeenCalledWith(expect.objectContaining({ type: 'init' }))
+        })
+
+        // Cancel — the AbortController rejects the promise without needing a Worker error event
+        session.cancel('rec.webm')
+        expect(mockWorker.terminate).toHaveBeenCalled()
+
+        // transcribe() resolves (CancelledError is caught and swallowed internally)
+        await expect(promise).resolves.toBeUndefined()
+        expect(session.isTranscribing('rec.webm')).toBe(false)
+        // No transcription-error should be broadcast on cancellation
+        expect(deps.broadcastMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'transcription-error' }))
+    })
+
+    it('cancel() before worker is created still settles transcribe()', async () => {
+        // Make getVideoFile hang until we cancel
+        let resolveVideo!: (v: Blob) => void
+        deps.getVideoFile = vi.fn(
+            () =>
+                new Promise<Blob>(res => {
+                    resolveVideo = res
+                }),
+        )
+        const session = new TranscriptionSession(deps)
+
+        const promise = session.transcribe('rec.webm')
+        expect(session.isTranscribing('rec.webm')).toBe(true)
+
+        // Cancel before getVideoFile resolves (Worker not yet created)
+        session.cancel('rec.webm')
+
+        // transcribe() resolves cleanly (CancelledError swallowed)
+        await expect(promise).resolves.toBeUndefined()
+        expect(session.isTranscribing('rec.webm')).toBe(false)
+        // Worker was never created
+        expect(deps.createWorker).not.toHaveBeenCalled()
+        expect(mockWorker.terminate).not.toHaveBeenCalled()
+
+        // Unblock the hanging promise (no-op after cancellation)
+        resolveVideo(new Blob())
+    })
+
+    it('cancel() is a no-op when no task is active for the given path', () => {
+        const session = new TranscriptionSession(deps)
+        // Should not throw
+        expect(() => session.cancel('nonexistent.webm')).not.toThrow()
+        expect(mockWorker.terminate).not.toHaveBeenCalled()
+    })
 })

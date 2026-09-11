@@ -1,6 +1,7 @@
 import type { Resolution, Configuration, SyncConfiguration, CropRegion, VideoRecordingMode } from './configuration'
 import type { RecordingState } from './handler'
-import type { ModelDownloadProgress } from './transcription/model_downloader'
+import type { ModelDownloadProgress } from './ml/model_downloader'
+import type { SummaryResult } from './summary/types'
 
 export const TIMER_STOP_CONFIRM_PENDING_KEY = 'timerStopConfirmPending'
 export const TIMER_STOP_TRIGGER_KEY = 'timerStopTrigger'
@@ -44,6 +45,14 @@ export type Message =
     | TranscriptionDeletedMessage
     | QueryTranscriptionStatusMessage
     | TranscriptionStatusResponseMessage
+    | StartSummaryMessage
+    | SummaryProgressMessage
+    | SummaryCompleteMessage
+    | SummaryErrorMessage
+    | SummaryDeletedMessage
+    | QuerySummaryStatusMessage
+    | SummaryStatusResponseMessage
+    | CancelTasksForPathMessage
     | CloseOffscreenIfIdleMessage
 
 export interface ExceptionMessage {
@@ -189,14 +198,18 @@ export interface ClaimClientsMessage {
     type: 'claim-clients'
 }
 
-// Model download request (option page → service_worker → offscreen)
+export type ModelType = 'transcription' | 'summary'
+
+// Model download request (settings → service_worker → offscreen)
 export interface StartModelDownloadMessage {
     type: 'start-model-download'
+    modelType: ModelType
 }
 
-// Model download progress (offscreen → service_worker → option page)
+// Model download progress (offscreen → service_worker → settings)
 export interface ModelDownloadProgressMessage {
     type: 'model-download-progress'
+    modelType: ModelType
     loaded: number
     total: number
     file: string
@@ -204,30 +217,35 @@ export interface ModelDownloadProgressMessage {
     totalFiles?: number
 }
 
-// Model download complete notification (offscreen → service_worker → option page)
+// Model download complete notification (offscreen → service_worker → settings)
 export interface ModelDownloadCompleteMessage {
     type: 'model-download-complete'
+    modelType: ModelType
 }
 
-// Model download error notification (offscreen → service_worker → option page)
+// Model download error notification (offscreen → service_worker → settings)
 export interface ModelDownloadErrorMessage {
     type: 'model-download-error'
+    modelType: ModelType
     error: string
 }
 
-// Model download cancel request (option page → service_worker → offscreen)
+// Model download cancel request (settings → service_worker → offscreen)
 export interface CancelModelDownloadMessage {
     type: 'cancel-model-download'
+    modelType: ModelType
 }
 
-// Query if model download is in progress (option page → service_worker → offscreen)
+// Query if model download is in progress (settings → service_worker → offscreen)
 export interface QueryModelDownloadStatusMessage {
     type: 'query-model-download-status'
+    modelType: ModelType
 }
 
-// Response for model download status query (offscreen → option page)
+// Response for model download status query (offscreen → settings)
 export interface ModelDownloadStatusResponseMessage {
     type: 'model-download-status-response'
+    modelType: ModelType
     isDownloading: boolean
     progress?: ModelDownloadProgress | null
 }
@@ -277,6 +295,61 @@ export interface TranscriptionStatusResponseMessage {
     type: 'transcription-status-response'
     path: string
     isTranscribing: boolean
+}
+
+// Summary start request (player → service_worker → offscreen)
+export interface StartSummaryMessage {
+    type: 'start-summary'
+    path: string
+}
+
+// Summary progress update (offscreen → service_worker → player)
+export interface SummaryProgressMessage {
+    type: 'summary-progress'
+    path: string
+    stage?: 'model_load' | 'generating'
+    loaded: number
+    total: number
+}
+
+// Summary complete notification (offscreen → service_worker → player)
+export interface SummaryCompleteMessage {
+    type: 'summary-complete'
+    path: string
+    summary: SummaryResult
+}
+
+// Summary error notification (offscreen → service_worker → player)
+export interface SummaryErrorMessage {
+    type: 'summary-error'
+    path: string
+    error: string
+}
+
+// Summary deleted notification (player / handler)
+export interface SummaryDeletedMessage {
+    type: 'summary-deleted'
+    path: string
+}
+
+// Query if summary is in progress for a file (player → service_worker → offscreen)
+export interface QuerySummaryStatusMessage {
+    type: 'query-summary-status'
+    path: string
+}
+
+// Response for summary status query (offscreen → player)
+export interface SummaryStatusResponseMessage {
+    type: 'summary-status-response'
+    path: string
+    isSummarizing: boolean
+}
+
+// Cancel all in-progress transcription / summary tasks for a recording path
+// (service_worker → offscreen, triggered by recording DELETE)
+export interface CancelTasksForPathMessage {
+    type: 'cancel-tasks-for-path'
+    path: string
 }
 
 // Request offscreen document to close itself if no tasks are active (service_worker → offscreen)

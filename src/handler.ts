@@ -13,6 +13,7 @@ import { parseRangeHeader, resolveByteRange, generateBoundary, buildMultipartByt
 import type { ResolvedRange } from './range'
 import type { Resolution, VideoRecordingMode } from './configuration'
 import { isTranscriptionResult } from './transcription/types'
+import { isSummaryResult } from './summary/types'
 import { segmentsToVTT, segmentsToSRT } from './transcription/vtt'
 
 const API_PREFIX = '/api/'
@@ -69,6 +70,19 @@ export function parseApiPath(pathname: string): { route: string; name?: string; 
         return { route: 'transcription', name, ext }
     }
 
+    // /api/recordings/:name/summary
+    const summaryMatch = path.match(/^recordings\/(.+)\/summary$/)
+    if (summaryMatch) {
+        let name: string
+        try {
+            name = decodeURIComponent(summaryMatch[1])
+        } catch {
+            return null
+        }
+        if (name.includes('/') || name.includes('\\')) return null
+        return { route: 'summary', name }
+    }
+
     // /api/recordings/:name
     const recordingMatch = path.match(/^recordings\/(.+)$/)
     if (recordingMatch) {
@@ -117,6 +131,7 @@ export async function handleApiRequest(
     storage: RecordingStorage,
     state: RecordingState,
     recordingDB: RecordingDB,
+    sendRuntimeMessage?: (msg: import('./message').Message) => Promise<unknown>,
 ): Promise<Response> {
     const url = new URL(request.url)
     const parsed = parseApiPath(url.pathname)
@@ -201,6 +216,7 @@ export async function handleApiRequest(
                             subFiles: r.subFiles,
                             subFilesSize,
                             hasTranscription: r.transcription != null,
+                            hasSummary: r.summary != null,
                             ...(thumbnailFileName ? { thumbnailFileName } : {}),
                         }
                     }),
@@ -319,6 +335,75 @@ export async function handleApiRequest(
                 }
             }
 
+            case 'summary': {
+                const name = parsed.name!
+                const recordedAt = parseRecordedAt(name)
+                const record = recordedAt != null ? await recordingDB.get(recordedAt) : undefined
+                if (record == null || record.mainFilePath !== name) {
+                    return new Response(JSON.stringify({ error: 'Invalid recording name' }), {
+                        status: 404,
+                        headers: { 'Content-Type': 'application/json' },
+                    })
+                }
+
+                switch (request.method) {
+                    case 'GET': {
+                        if (!record?.summary) {
+                            return new Response(JSON.stringify({ error: 'Summary not found' }), {
+                                status: 404,
+                                headers: { 'Content-Type': 'application/json' },
+                            })
+                        }
+                        return new Response(JSON.stringify(record.summary), {
+                            status: 200,
+                            headers: { 'Content-Type': 'application/json' },
+                        })
+                    }
+                    case 'PUT': {
+                        if (!record) {
+                            return new Response(JSON.stringify({ error: 'Recording not found' }), {
+                                status: 404,
+                                headers: { 'Content-Type': 'application/json' },
+                            })
+                        }
+                        let body: unknown
+                        try {
+                            body = await request.json()
+                        } catch {
+                            return new Response(JSON.stringify({ error: 'Invalid JSON' }), {
+                                status: 400,
+                                headers: { 'Content-Type': 'application/json' },
+                            })
+                        }
+                        if (!isSummaryResult(body)) {
+                            return new Response(JSON.stringify({ error: 'Invalid summary payload' }), {
+                                status: 400,
+                                headers: { 'Content-Type': 'application/json' },
+                            })
+                        }
+                        record.summary = body
+                        await recordingDB.put(record)
+                        return new Response(null, { status: 204 })
+                    }
+                    case 'DELETE': {
+                        if (!record) {
+                            return new Response(JSON.stringify({ error: 'Recording not found' }), {
+                                status: 404,
+                                headers: { 'Content-Type': 'application/json' },
+                            })
+                        }
+                        record.summary = undefined
+                        await recordingDB.put(record)
+                        return new Response(null, { status: 204 })
+                    }
+                    default:
+                        return new Response(JSON.stringify({ error: 'Method Not Allowed' }), {
+                            status: 405,
+                            headers: { 'Content-Type': 'application/json' },
+                        })
+                }
+            }
+
             case 'recording': {
                 const name = parsed.name!
                 const mimeType = getMimeTypeFromExtension(name)
@@ -365,6 +450,15 @@ export async function handleApiRequest(
                                 }),
                                 { status: 409 },
                             )
+                        }
+                        // Cancel any in-progress transcription / summary before deleting data
+                        // to prevent a finishing worker from saving data and recreating the record.
+                        if (sendRuntimeMessage) {
+                            try {
+                                await sendRuntimeMessage({ type: 'cancel-tasks-for-path', path: name })
+                            } catch (e) {
+                                console.warn('Failed to send cancel-tasks-for-path before deletion:', e)
+                            }
                         }
                         // Delete sub-files and main file from OPFS (idempotent)
                         await Promise.all([

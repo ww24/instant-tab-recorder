@@ -48,6 +48,7 @@ export default defineConfig(({ mode }) => ({
                 option: path.resolve(import.meta.dirname, 'src/option.ts'),
                 service_worker: path.resolve(import.meta.dirname, 'src/service_worker.ts'),
                 transcription_worker: path.resolve(import.meta.dirname, 'src/transcription/worker.ts'),
+                summary_worker: path.resolve(import.meta.dirname, 'src/summary/worker.ts'),
                 player: path.resolve(import.meta.dirname, 'src/player.ts'),
             },
             output: {

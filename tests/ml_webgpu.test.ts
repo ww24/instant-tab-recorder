@@ -1,5 +1,5 @@
 import { describe, test, expect, vi, afterEach } from 'vitest'
-import { checkWebGPUSupport } from '../src/transcription/webgpu'
+import { checkWebGPUSupport } from '../src/ml/webgpu'
 
 describe('checkWebGPUSupport', () => {
     const originalNavigator = globalThis.navigator

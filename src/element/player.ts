@@ -10,6 +10,8 @@ import '@material/web/progress/circular-progress'
 import '@material/web/dialog/dialog'
 import '@material/web/menu/menu'
 import '@material/web/menu/menu-item'
+import { marked } from 'marked'
+import { safeHTML } from './safe_html'
 import { Settings } from './settings'
 import type { TranscriptionSegment } from '../transcription/types'
 import { formatSeconds } from '../transcription/utils'
@@ -17,7 +19,11 @@ import type { Message } from '../message'
 import { t } from '../i18n'
 import { applyTheme } from '../theme'
 import { recordingApi } from '../api_client'
-import { OPFSModelCache } from '../transcription/opfs_model_cache'
+import { OPFSModelCache } from '../ml/opfs_model_cache'
+import { REQUIRED_TRANSCRIPTION_MODEL_FILES } from '../transcription/model_files'
+import { TRANSCRIPTION_MODEL_CACHE_DIR } from '../transcription/model_downloader'
+import { REQUIRED_SUMMARY_MODEL_FILES } from '../summary/model_files'
+import { SUMMARY_MODEL_CACHE_DIR } from '../summary/model_downloader'
 
 @customElement('extension-player')
 export class Player extends LitElement {
@@ -208,10 +214,19 @@ export class Player extends LitElement {
             --md-dialog-container-color: var(--theme-dialog-bg, var(--md-sys-color-surface-container-high, #1e1e2a));
             --md-dialog-headline-color: var(--theme-text, #e8e8f0);
             --md-dialog-supporting-text-color: var(--theme-text-secondary, #a0a0b8);
+        }
+
+        md-dialog.delete-dialog {
             --md-text-button-label-text-color: var(--theme-error, #f44336);
             --md-text-button-focus-label-text-color: var(--theme-error, #f44336);
             --md-text-button-hover-label-text-color: var(--theme-error, #f44336);
             --md-text-button-pressed-label-text-color: var(--theme-error, #f44336);
+        }
+
+        md-dialog.summary-dialog {
+            width: 560px;
+            max-width: 90vw;
+            max-height: 80vh;
         }
 
         .dialog-content {
@@ -220,6 +235,110 @@ export class Player extends LitElement {
             gap: 12px;
             color: var(--theme-text-secondary, #a0a0b8);
             font-size: 0.9375rem;
+            line-height: 1.5;
+        }
+
+        .summary-body {
+            word-break: break-word;
+            font-size: 0.9375rem;
+            line-height: 1.6;
+            color: var(--theme-text, #e8e8f0);
+            padding: 4px 0;
+        }
+
+        .summary-body h1,
+        .summary-body h2,
+        .summary-body h3,
+        .summary-body h4 {
+            color: var(--theme-text, #e8e8f0);
+            margin-top: 16px;
+            margin-bottom: 8px;
+            font-weight: 600;
+            line-height: 1.3;
+        }
+
+        .summary-body h1:first-child,
+        .summary-body h2:first-child,
+        .summary-body h3:first-child,
+        .summary-body h4:first-child {
+            margin-top: 0;
+        }
+
+        .summary-body h1 {
+            font-size: 1.25rem;
+        }
+
+        .summary-body h2 {
+            font-size: 1.125rem;
+        }
+
+        .summary-body h3 {
+            font-size: 1rem;
+        }
+
+        .summary-body p {
+            margin: 0 0 8px;
+        }
+
+        .summary-body p:last-child {
+            margin-bottom: 0;
+        }
+
+        .summary-body ul,
+        .summary-body ol {
+            margin: 0 0 8px;
+            padding-left: 20px;
+        }
+
+        .summary-body li {
+            margin-bottom: 4px;
+        }
+
+        .summary-body code {
+            font-family: monospace;
+            background: var(--theme-code-bg, rgba(255, 255, 255, 0.1));
+            padding: 2px 4px;
+            border-radius: 4px;
+            font-size: 0.85em;
+        }
+
+        .summary-body pre {
+            background: var(--theme-code-bg, rgba(255, 255, 255, 0.1));
+            padding: 10px;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin: 8px 0;
+        }
+
+        .summary-body pre code {
+            background: none;
+            padding: 0;
+        }
+
+        .summary-body blockquote {
+            border-left: 3px solid var(--theme-primary, #6750a4);
+            margin: 8px 0;
+            padding-left: 12px;
+            color: var(--theme-text-secondary, #a0a0b8);
+        }
+
+        .summary-body a {
+            color: var(--theme-link, #8ab4f8);
+            text-decoration: underline;
+        }
+
+        .summary-notice {
+            text-align: center;
+            padding: 24px 16px;
+            color: var(--theme-text-secondary, #a0a0b8);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .summary-notice p {
+            margin: 0;
             line-height: 1.5;
         }
 
@@ -249,7 +368,22 @@ export class Player extends LitElement {
     @state() private trackVersion = 0
     @state() private isControlled = typeof navigator !== 'undefined' && navigator.serviceWorker?.controller != null
 
-    private readonly modelCache = new OPFSModelCache()
+    private readonly transcriptionModelCache = new OPFSModelCache(
+        TRANSCRIPTION_MODEL_CACHE_DIR,
+        REQUIRED_TRANSCRIPTION_MODEL_FILES,
+    )
+
+    @state() private showSummaryDialog = false
+    @state() private isSummarizing = false
+    @state() private summaryProgress: { loaded: number; total: number; stage?: string } | null = null
+    @state() private summaryError: string | null = null
+    @state() private summaryText: string | null = null
+    @state() private summaryCopied = false
+    @state() private isSummaryModelReady = false
+    @state() private needsSummaryModelRedownload = false
+
+    private readonly summaryModelCache = new OPFSModelCache(SUMMARY_MODEL_CACHE_DIR, REQUIRED_SUMMARY_MODEL_FILES)
+
     private messageListener?: (message: Message) => void
 
     constructor() {
@@ -308,6 +442,40 @@ export class Player extends LitElement {
                         this.isTranscribing = message.isTranscribing
                     }
                     break
+
+                case 'summary-progress':
+                    if (message.path === this.path) {
+                        this.isSummarizing = true
+                        this.summaryProgress = {
+                            loaded: message.loaded,
+                            total: message.total,
+                            stage: message.stage,
+                        }
+                    }
+                    break
+
+                case 'summary-complete':
+                    if (message.path === this.path) {
+                        this.isSummarizing = false
+                        this.summaryProgress = null
+                        this.summaryError = null
+                        this.summaryText = message.summary.text
+                    }
+                    break
+
+                case 'summary-error':
+                    if (message.path === this.path) {
+                        this.isSummarizing = false
+                        this.summaryProgress = null
+                        this.summaryError = message.error
+                    }
+                    break
+
+                case 'summary-status-response':
+                    if (message.path === this.path) {
+                        this.isSummarizing = message.isSummarizing
+                    }
+                    break
             }
         }
 
@@ -357,7 +525,9 @@ export class Player extends LitElement {
                 console.warn('Failed to ensure service worker control:', e)
             }
             await this.fetchTranscription()
-            // Query if transcription is in progress in background
+            await this.fetchSummary()
+            await this.checkSummaryModelReady()
+            // Query if transcription or summary is in progress in background
             try {
                 await chrome.runtime.sendMessage({
                     type: 'query-transcription-status',
@@ -366,6 +536,113 @@ export class Player extends LitElement {
             } catch (e) {
                 console.warn('Failed to query transcription status:', e)
             }
+            try {
+                await chrome.runtime.sendMessage({
+                    type: 'query-summary-status',
+                    path: this.path,
+                })
+            } catch (e) {
+                console.warn('Failed to query summary status:', e)
+            }
+        }
+    }
+
+    private async checkSummaryModelReady() {
+        try {
+            this.isSummaryModelReady = await this.summaryModelCache.hasCache(REQUIRED_SUMMARY_MODEL_FILES)
+        } catch (e) {
+            console.warn('Failed to check summary model cache:', e)
+            this.isSummaryModelReady = false
+        }
+    }
+
+    private async fetchSummary() {
+        if (!this.path) return
+        try {
+            const data = await recordingApi.getSummary(this.path)
+            if (data) {
+                this.summaryText = data.text
+            } else {
+                this.summaryText = null
+            }
+        } catch (e) {
+            console.error('Failed to fetch summary:', e)
+            this.summaryText = null
+        }
+    }
+
+    private async openSummaryDialog() {
+        this.showSummaryDialog = true
+        this.summaryCopied = false
+        this.summaryError = null
+        this.needsSummaryModelRedownload = false
+        await this.checkSummaryModelReady()
+        if (!this.summaryText) {
+            await this.fetchSummary()
+        }
+    }
+
+    private closeSummaryDialog() {
+        this.showSummaryDialog = false
+    }
+
+    private async startSummary() {
+        if (!this.path) return
+        this.isSummarizing = true
+        this.summaryError = null
+        this.needsSummaryModelRedownload = false
+        this.summaryProgress = null
+
+        try {
+            const hasCache = await this.summaryModelCache.hasCache()
+            if (!hasCache) {
+                this.isSummarizing = false
+                this.needsSummaryModelRedownload = true
+                this.summaryError = t('playerSummaryModelRedownloadRequired')
+                return
+            }
+        } catch (e) {
+            console.error('Failed to check summary model cache:', e)
+            this.isSummarizing = false
+            this.needsSummaryModelRedownload = true
+            this.summaryError = t('playerSummaryModelRedownloadRequired')
+            return
+        }
+
+        chrome.runtime
+            .sendMessage({
+                type: 'start-summary',
+                path: this.path,
+            })
+            .catch(e => {
+                console.error('Failed to start summary:', e)
+                this.isSummarizing = false
+                this.summaryError = e instanceof Error ? e.message : String(e)
+            })
+    }
+
+    private async copySummary() {
+        if (!this.summaryText) return
+        try {
+            await navigator.clipboard.writeText(this.summaryText)
+            this.summaryCopied = true
+            setTimeout(() => {
+                this.summaryCopied = false
+            }, 2000)
+        } catch (e) {
+            console.error('Failed to copy summary:', e)
+        }
+    }
+
+    private getSummaryProgressText(): string {
+        const stage = this.summaryProgress?.stage
+        switch (stage) {
+            case 'model_load':
+                return t('playerSummaryLoadingModel')
+            case 'generating':
+                return t('playerSummaryGenerating')
+            default:
+                return t('playerSummaryGenerating')
         }
     }
 
@@ -397,7 +674,7 @@ export class Player extends LitElement {
         this.needsModelRedownload = false
 
         try {
-            const hasCache = await this.modelCache.hasCache()
+            const hasCache = await this.transcriptionModelCache.hasCache()
             if (!hasCache) {
                 this.isTranscribing = false
                 this.needsModelRedownload = true
@@ -429,6 +706,11 @@ export class Player extends LitElement {
         window.open(url, '_blank')
     }
 
+    private openSettingsForSummary() {
+        const url = chrome.runtime.getURL('option.html?tab=settings#summary')
+        window.open(url, '_blank')
+    }
+
     private handleTimeUpdate(e: Event) {
         const video = e.target as HTMLVideoElement
         if (video) {
@@ -457,6 +739,12 @@ export class Player extends LitElement {
         if (!this.path) return
 
         try {
+            // Cancel any in-flight transcription / summary tasks before deleting
+            // data so a finishing worker cannot restore what we are about to remove.
+            await chrome.runtime
+                .sendMessage({ type: 'cancel-tasks-for-path', path: this.path })
+                .catch(e => console.warn('Failed to send cancel-tasks-for-path:', e))
+
             await recordingApi.deleteTranscription(this.path)
             this.hasTranscription = false
             this.transcriptionSegments = []
@@ -465,6 +753,12 @@ export class Player extends LitElement {
                 type: 'transcription-deleted',
                 path: this.path,
             })
+            try {
+                await recordingApi.deleteSummary(this.path)
+                this.summaryText = null
+            } catch (e) {
+                console.warn('Failed to delete summary:', e)
+            }
         } catch (e) {
             console.error('Error deleting transcription:', e)
             this.transcribeError = e instanceof Error ? e.message : String(e)
@@ -522,30 +816,47 @@ export class Player extends LitElement {
                                           this.hasTranscription
                                               ? html`
                                                     <div class="panel-actions">
-                                                        <span class="menu-anchor-wrapper">
-                                                            <md-icon-button
-                                                                id="download-menu-anchor"
-                                                                title=${t('playerDownloadTranscription')}
-                                                                @click=${() =>
-                                                                    (this.showDownloadMenu = !this.showDownloadMenu)}>
-                                                                <md-icon>download</md-icon>
-                                                            </md-icon-button>
-                                                            <md-menu
-                                                                anchor="download-menu-anchor"
-                                                                .open=${this.showDownloadMenu}
-                                                                @closed=${() => (this.showDownloadMenu = false)}>
-                                                                <md-menu-item
-                                                                    href=${vttDownloadUrl}
-                                                                    @click=${() => (this.showDownloadMenu = false)}>
-                                                                    <div slot="headline">WebVTT&nbsp;(.vtt)</div>
-                                                                </md-menu-item>
-                                                                <md-menu-item
-                                                                    href=${srtDownloadUrl}
-                                                                    @click=${() => (this.showDownloadMenu = false)}>
-                                                                    <div slot="headline">SubRip&nbsp;(.srt)</div>
-                                                                </md-menu-item>
-                                                            </md-menu>
-                                                        </span>
+                                                        ${
+                                                            this.transcriptionSegments?.length
+                                                                ? html`
+                                                                      <md-icon-button
+                                                                          id="summary-button"
+                                                                          title=${t('playerSummary')}
+                                                                          @click=${this.openSummaryDialog}>
+                                                                          <md-icon>auto_awesome</md-icon>
+                                                                      </md-icon-button>
+                                                                      <span class="menu-anchor-wrapper">
+                                                                          <md-icon-button
+                                                                              id="download-menu-anchor"
+                                                                              title=${t('playerDownloadTranscription')}
+                                                                              @click=${() =>
+                                                                                  (this.showDownloadMenu =
+                                                                                      !this.showDownloadMenu)}>
+                                                                              <md-icon>download</md-icon>
+                                                                          </md-icon-button>
+                                                                          <md-menu
+                                                                              anchor="download-menu-anchor"
+                                                                              .open=${this.showDownloadMenu}
+                                                                              @closed=${() => (this.showDownloadMenu = false)}>
+                                                                              <md-menu-item
+                                                                                  href=${vttDownloadUrl}
+                                                                                  @click=${() => (this.showDownloadMenu = false)}>
+                                                                                  <div slot="headline">
+                                                                                      WebVTT&nbsp;(.vtt)
+                                                                                  </div>
+                                                                              </md-menu-item>
+                                                                              <md-menu-item
+                                                                                  href=${srtDownloadUrl}
+                                                                                  @click=${() => (this.showDownloadMenu = false)}>
+                                                                                  <div slot="headline">
+                                                                                      SubRip&nbsp;(.srt)
+                                                                                  </div>
+                                                                              </md-menu-item>
+                                                                          </md-menu>
+                                                                      </span>
+                                                                  `
+                                                                : ''
+                                                        }
                                                         <md-icon-button
                                                             @click=${this.openDeleteDialog}
                                                             title=${t('playerDeleteTranscription')}>
@@ -658,7 +969,7 @@ export class Player extends LitElement {
             ${
                 this.showDeleteDialog
                     ? html`
-                          <md-dialog open @closed=${this.closeDeleteDialog}>
+                          <md-dialog class="delete-dialog" open @closed=${this.closeDeleteDialog}>
                               <div slot="headline">${t('playerDeleteTranscriptionHeadline')}</div>
                               <md-icon slot="icon">delete_outline</md-icon>
                               <div slot="content" class="dialog-content">
@@ -676,6 +987,126 @@ export class Player extends LitElement {
                       `
                     : ''
             }
+
+            <!-- Summary Dialog -->
+            ${this.renderSummaryDialog()}
+        `
+    }
+
+    private renderSummaryDialog() {
+        if (!this.showSummaryDialog) return ''
+
+        return html`
+            <md-dialog class="summary-dialog" open @closed=${this.closeSummaryDialog}>
+                <div slot="headline">${t('playerSummaryTitle')}</div>
+                <md-icon slot="icon">auto_awesome</md-icon>
+                <div slot="content" class="dialog-content">
+                    ${
+                        this.summaryError
+                            ? html`
+                                  <div class="error-banner">
+                                      <p>${this.summaryError}</p>
+                                      ${
+                                          this.needsSummaryModelRedownload
+                                              ? html`
+                                                    <md-filled-tonal-button
+                                                        class="open-settings-button"
+                                                        @click=${this.openSettingsForSummary}>
+                                                        <md-icon slot="icon">settings</md-icon>
+                                                        ${t('playerOpenSettings')}
+                                                    </md-filled-tonal-button>
+                                                `
+                                              : ''
+                                      }
+                                  </div>
+                              `
+                            : ''
+                    }
+                    ${
+                        this.isSummarizing
+                            ? html`
+                                  <div class="status-center">
+                                      <md-circular-progress indeterminate></md-circular-progress>
+                                      <p>${this.getSummaryProgressText()}</p>
+                                  </div>
+                              `
+                            : this.summaryText
+                              ? html`
+                                    <div class="summary-body">
+                                        ${safeHTML(
+                                            marked.parse(this.summaryText, {
+                                                async: false,
+                                                breaks: true,
+                                                gfm: true,
+                                            }) as string,
+                                        )}
+                                    </div>
+                                `
+                              : !this.isSummaryModelReady
+                                ? html`
+                                      <div class="summary-notice">
+                                          <p>${t('playerSummaryModelNotReady')}</p>
+                                      </div>
+                                  `
+                                : !this.hasTranscription
+                                  ? html`
+                                        <div class="summary-notice">
+                                            <p>${t('playerSummaryNoTranscription')}</p>
+                                        </div>
+                                    `
+                                  : html`
+                                        <div class="summary-notice">
+                                            <p>${t('playerStartSummary')}</p>
+                                        </div>
+                                    `
+                    }
+                </div>
+                <div slot="actions">
+                    ${
+                        this.isSummarizing
+                            ? html`
+                                  <md-text-button @click=${this.closeSummaryDialog}> ${t('alertOk')} </md-text-button>
+                              `
+                            : this.summaryText
+                              ? html`
+                                    <md-text-button @click=${this.startSummary}>
+                                        <md-icon slot="icon">refresh</md-icon>
+                                        ${t('playerSummaryRegenerate')}
+                                    </md-text-button>
+                                    <md-filled-tonal-button @click=${this.copySummary}>
+                                        <md-icon slot="icon">${this.summaryCopied ? 'check' : 'content_copy'}</md-icon>
+                                        ${this.summaryCopied ? t('playerSummaryCopied') : t('playerSummaryCopy')}
+                                    </md-filled-tonal-button>
+                                    <md-text-button @click=${this.closeSummaryDialog}> ${t('alertOk')} </md-text-button>
+                                `
+                              : !this.isSummaryModelReady
+                                ? html`
+                                      <md-filled-button @click=${this.openSettingsForSummary}>
+                                          <md-icon slot="icon">settings</md-icon>
+                                          ${t('playerOpenSettings')}
+                                      </md-filled-button>
+                                      <md-text-button @click=${this.closeSummaryDialog}>
+                                          ${t('confirmCancelButton')}
+                                      </md-text-button>
+                                  `
+                                : !this.hasTranscription
+                                  ? html`
+                                        <md-text-button @click=${this.closeSummaryDialog}>
+                                            ${t('alertOk')}
+                                        </md-text-button>
+                                    `
+                                  : html`
+                                        <md-filled-button @click=${this.startSummary}>
+                                            <md-icon slot="icon">auto_awesome</md-icon>
+                                            ${t('playerStartSummary')}
+                                        </md-filled-button>
+                                        <md-text-button @click=${this.closeSummaryDialog}>
+                                            ${t('confirmCancelButton')}
+                                        </md-text-button>
+                                    `
+                    }
+                </div>
+            </md-dialog>
         `
     }
 }
