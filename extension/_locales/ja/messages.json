@@ -689,6 +689,12 @@
     "settingsTranscriptionDownloadPending": {
         "message": "ダウンロードを準備中..."
     },
+    "settingsTranscriptionUnsupportedWebGPU": {
+        "message": "お使いのブラウザは WebGPU に対応していないため、文字起こし機能を利用できません。"
+    },
+    "settingsTranscriptionUnsupportedShaderF16": {
+        "message": "お使いのブラウザまたは GPU は WebGPU の shader-f16 に対応していないため、文字起こし機能を利用できません。"
+    },
     "playerTranscriptionLoadingModel": {
         "message": "モデル読み込み中"
     },

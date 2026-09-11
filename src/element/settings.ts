@@ -48,6 +48,8 @@ import { registerFlacEncoder } from '@mediabunny/flac-encoder'
 import { OPFSModelCache } from '../transcription/opfs_model_cache'
 import { ModelDownloader } from '../transcription/model_downloader'
 import { TRANSCRIPTION_LANGUAGES } from '../transcription/languages'
+import { checkWebGPUSupport } from '../transcription/webgpu'
+import type { WebGPUSupportReason } from '../transcription/webgpu'
 
 @customElement('extension-settings')
 export class Settings extends LitElement {
@@ -187,6 +189,9 @@ export class Settings extends LitElement {
                 margin-bottom: 1rem;
                 white-space: pre-line;
             }
+            .settings-hint.error {
+                color: var(--md-sys-color-error, #b3261e);
+            }
             .download-progress-area {
                 margin-top: 0.5rem;
                 margin-bottom: 0.5rem;
@@ -229,6 +234,15 @@ export class Settings extends LitElement {
 
     @property()
     private downloadError: string | null = null
+
+    @property()
+    private isWebGPUSupported: boolean = true
+
+    @property()
+    private transcriptionUnsupportedReason: WebGPUSupportReason | null = null
+
+    @property()
+    private isCheckingWebGPU: boolean = false
 
     @property()
     private timerEstimateText: string = ''
@@ -654,14 +668,19 @@ export class Settings extends LitElement {
                 <div class="settings-group">
                     <label
                         class="switch-label"
-                        title="${t('settingsTranscriptionTitle', ModelDownloader.getFormattedTotalSize())}">
+                        title="${
+                            !this.isWebGPUSupported
+                                ? this.transcriptionHintText
+                                : t('settingsTranscriptionTitle', ModelDownloader.getFormattedTotalSize())
+                        }">
                         ${t('settingsTranscription')}
                         <md-switch
                             id="transcription-switch"
                             ?selected=${live((this.config.transcription?.enabled ?? false) || this.isModelDownloading)}
+                            ?disabled=${live(!this.isWebGPUSupported || this.isCheckingWebGPU)}
                             @input=${this.updateTranscriptionEnabled}></md-switch>
                     </label>
-                    <p class="settings-hint">${this.transcriptionHintText}</p>
+                    <p class="settings-hint ${!this.isWebGPUSupported ? 'error' : ''}">${this.transcriptionHintText}</p>
 
                     ${
                         this.isModelDownloading
@@ -923,6 +942,12 @@ export class Settings extends LitElement {
     }
 
     private get transcriptionHintText(): string {
+        if (!this.isWebGPUSupported) {
+            if (this.transcriptionUnsupportedReason === 'no-shader-f16') {
+                return t('settingsTranscriptionUnsupportedShaderF16')
+            }
+            return t('settingsTranscriptionUnsupportedWebGPU')
+        }
         const modelSize = ModelDownloader.getFormattedTotalSize()
         if (this.isModelDownloading) {
             return t('settingsTranscriptionDownloadingHint')
@@ -1237,12 +1262,32 @@ export class Settings extends LitElement {
     private isUserCancellingDownload = false
 
     private async updateTranscriptionEnabled(e: Event) {
-        if (!(e.target instanceof MdSwitch)) return
-        const enabled = e.target.selected
+        const target = e.target
+        if (!(target instanceof MdSwitch)) return
+        const enabled = target.selected
 
         if (enabled) {
-            // トグルON: モデルがキャッシュ済みならそのまま有効化、未キャッシュなら即ダウンロード開始
             this.downloadError = null
+            this.isCheckingWebGPU = true
+            this.requestUpdate()
+
+            let gpuSupport
+            try {
+                gpuSupport = await checkWebGPUSupport()
+            } finally {
+                this.isCheckingWebGPU = false
+            }
+
+            if (!gpuSupport.supported) {
+                this.isWebGPUSupported = false
+                this.transcriptionUnsupportedReason = gpuSupport.reason ?? 'no-webgpu'
+                target.selected = false
+                this.config.transcription.enabled = false
+                this.requestUpdate()
+                return
+            }
+
+            // トグルON: モデルがキャッシュ済みならそのまま有効化、未キャッシュなら即ダウンロード開始
             const isCached = await this.modelCache.hasCache()
             if (!isCached) {
                 this.isModelDownloading = true

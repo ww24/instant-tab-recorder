@@ -73,6 +73,11 @@ vi.mock('../../src/theme', () => ({
     applyTheme: vi.fn(),
 }))
 
+const mockCheckWebGPUSupport = vi.fn().mockResolvedValue({ supported: true })
+vi.mock('../../src/transcription/webgpu', () => ({
+    checkWebGPUSupport: () => mockCheckWebGPUSupport(),
+}))
+
 describe('extension-settings', () => {
     test('renders Appearance heading with theme selector', async () => {
         const screen = render(html`<extension-settings></extension-settings>`)
@@ -298,5 +303,87 @@ describe('extension-settings', () => {
         el.requestUpdate()
         await elementUpdated(el)
         expect(hintEl.textContent?.trim()).toBe('Disabling will delete the cached model data (~1.5 GB).')
+    })
+
+    test('disables transcription switch and shows unsupported message when WebGPU is not supported on toggle', async () => {
+        mockCheckWebGPUSupport.mockResolvedValueOnce({ supported: false, reason: 'no-webgpu' })
+        const screen = render(html`<extension-settings></extension-settings>`)
+        const el = screen.container.querySelector('extension-settings')!
+        await elementUpdated(el)
+
+        const transcriptionSwitch = shadowQuery(el, '#transcription-switch') as any
+        expect(transcriptionSwitch).not.toBeNull()
+        expect(transcriptionSwitch.disabled).toBeFalsy()
+
+        // Toggle transcription ON
+        transcriptionSwitch.selected = true
+        transcriptionSwitch.dispatchEvent(new Event('input'))
+
+        await vi.waitFor(() => {
+            expect(transcriptionSwitch.disabled).toBe(true)
+        })
+        expect(transcriptionSwitch.selected).toBe(false)
+
+        // Hint should display WebGPU unsupported message with error style
+        const hintEl = shadowQuery(el, '.settings-hint')!
+        expect(hintEl.classList.contains('error')).toBe(true)
+        expect(hintEl.textContent?.trim()).toBe(
+            'Transcription is not available because your browser does not support WebGPU.',
+        )
+
+        // Should not have sent start-model-download message
+        expect(chrome.runtime.sendMessage).not.toHaveBeenCalledWith({ type: 'start-model-download' })
+    })
+
+    test('disables transcription switch and shows unsupported message when shader-f16 is not supported on toggle', async () => {
+        mockCheckWebGPUSupport.mockResolvedValueOnce({ supported: false, reason: 'no-shader-f16' })
+        const screen = render(html`<extension-settings></extension-settings>`)
+        const el = screen.container.querySelector('extension-settings')!
+        await elementUpdated(el)
+
+        const transcriptionSwitch = shadowQuery(el, '#transcription-switch') as any
+        expect(transcriptionSwitch).not.toBeNull()
+
+        // Toggle transcription ON
+        transcriptionSwitch.selected = true
+        transcriptionSwitch.dispatchEvent(new Event('input'))
+
+        await vi.waitFor(() => {
+            expect(transcriptionSwitch.disabled).toBe(true)
+        })
+        expect(transcriptionSwitch.selected).toBe(false)
+
+        // Hint should display shader-f16 unsupported message with error style
+        const hintEl = shadowQuery(el, '.settings-hint')!
+        expect(hintEl.classList.contains('error')).toBe(true)
+        expect(hintEl.textContent?.trim()).toBe(
+            'Transcription is not available because your browser or GPU does not support WebGPU shader-f16.',
+        )
+
+        // Should not have sent start-model-download message
+        expect(chrome.runtime.sendMessage).not.toHaveBeenCalledWith({ type: 'start-model-download' })
+    })
+
+    test('starts model download when WebGPU and shader-f16 are supported on toggle', async () => {
+        mockCheckWebGPUSupport.mockResolvedValueOnce({ supported: true })
+        const screen = render(html`<extension-settings></extension-settings>`)
+        const el = screen.container.querySelector('extension-settings')!
+        await elementUpdated(el)
+
+        const transcriptionSwitch = shadowQuery(el, '#transcription-switch') as any
+        expect(transcriptionSwitch).not.toBeNull()
+
+        // Toggle transcription ON
+        transcriptionSwitch.selected = true
+        transcriptionSwitch.dispatchEvent(new Event('input'))
+        await elementUpdated(el)
+
+        // Switch should not be disabled
+        expect(transcriptionSwitch.disabled).toBe(false)
+
+        // Should have sent start-model-download message
+        await vi.waitFor(() => {
+            expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({ type: 'start-model-download' })
+        })
     })
 })

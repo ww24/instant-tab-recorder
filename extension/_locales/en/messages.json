@@ -899,6 +899,14 @@
     "settingsTranscriptionDownloadPending": {
         "message": "Preparing download..."
     },
+    "settingsTranscriptionUnsupportedWebGPU": {
+        "message": "Transcription is not available because your browser does not support WebGPU.",
+        "description": "Notice displayed when WebGPU is not supported by the browser"
+    },
+    "settingsTranscriptionUnsupportedShaderF16": {
+        "message": "Transcription is not available because your browser or GPU does not support WebGPU shader-f16.",
+        "description": "Notice displayed when WebGPU shader-f16 is not supported"
+    },
     "playerTranscriptionLoadingModel": {
         "message": "Loading model",
         "description": "Progress stage: loading model"
