@@ -907,6 +907,18 @@
         "message": "Transcription is not available because your browser or GPU does not support WebGPU shader-f16.",
         "description": "Notice displayed when WebGPU shader-f16 is not supported"
     },
+    "settingsTranscriptionModelMissingWarning": {
+        "message": "Model data is missing or corrupted. Please toggle transcription off and on again to redownload the model.",
+        "description": "Warning shown when transcription is enabled but model cache files are missing or incomplete"
+    },
+    "playerModelRedownloadRequired": {
+        "message": "Transcription model is missing or corrupted. Please redownload the model from Settings.",
+        "description": "Error message shown when transcription model files are missing or corrupted"
+    },
+    "playerOpenSettings": {
+        "message": "Open Settings",
+        "description": "Button to navigate to Settings page"
+    },
     "playerTranscriptionLoadingModel": {
         "message": "Loading model",
         "description": "Progress stage: loading model"

@@ -78,6 +78,18 @@ vi.mock('../../src/transcription/webgpu', () => ({
     checkWebGPUSupport: () => mockCheckWebGPUSupport(),
 }))
 
+const mockHasCache = vi.fn().mockResolvedValue(true)
+const mockClear = vi.fn().mockResolvedValue(undefined)
+vi.mock('../../src/transcription/opfs_model_cache', () => {
+    class MockOPFSModelCache {
+        hasCache = () => mockHasCache()
+        clear = () => mockClear()
+    }
+    return {
+        OPFSModelCache: MockOPFSModelCache,
+    }
+})
+
 describe('extension-settings', () => {
     test('renders Appearance heading with theme selector', async () => {
         const screen = render(html`<extension-settings></extension-settings>`)
@@ -285,7 +297,7 @@ describe('extension-settings', () => {
         const expSection = shadowQuery(el, '.experimental-section')!
         const hintEl = expSection.querySelector('.settings-hint')!
         expect(hintEl.textContent?.trim()).toBe(
-            'When enabled, transcription works entirely within your local environment.\nApproximately 1.5 GB of model data will be downloaded, so please be mindful of your network environment.',
+            'When enabled, transcription works entirely within your local environment.\nApproximately 1.4 GB of model data will be downloaded, so please be mindful of your network environment.',
         )
 
         // 2. Downloading state
@@ -302,7 +314,7 @@ describe('extension-settings', () => {
         el.config = config
         el.requestUpdate()
         await elementUpdated(el)
-        expect(hintEl.textContent?.trim()).toBe('Disabling will delete the cached model data (~1.5 GB).')
+        expect(hintEl.textContent?.trim()).toBe('Disabling will delete the cached model data (~1.4 GB).')
     })
 
     test('disables transcription switch and shows unsupported message when WebGPU is not supported on toggle', async () => {
@@ -311,7 +323,7 @@ describe('extension-settings', () => {
         const el = screen.container.querySelector('extension-settings')!
         await elementUpdated(el)
 
-        const transcriptionSwitch = shadowQuery(el, '#transcription-switch') as any
+        const transcriptionSwitch = shadowQuery(el, '#transcription') as any
         expect(transcriptionSwitch).not.toBeNull()
         expect(transcriptionSwitch.disabled).toBeFalsy()
 
@@ -341,7 +353,7 @@ describe('extension-settings', () => {
         const el = screen.container.querySelector('extension-settings')!
         await elementUpdated(el)
 
-        const transcriptionSwitch = shadowQuery(el, '#transcription-switch') as any
+        const transcriptionSwitch = shadowQuery(el, '#transcription') as any
         expect(transcriptionSwitch).not.toBeNull()
 
         // Toggle transcription ON
@@ -366,11 +378,12 @@ describe('extension-settings', () => {
 
     test('starts model download when WebGPU and shader-f16 are supported on toggle', async () => {
         mockCheckWebGPUSupport.mockResolvedValueOnce({ supported: true })
+        mockHasCache.mockResolvedValueOnce(false)
         const screen = render(html`<extension-settings></extension-settings>`)
         const el = screen.container.querySelector('extension-settings')!
         await elementUpdated(el)
 
-        const transcriptionSwitch = shadowQuery(el, '#transcription-switch') as any
+        const transcriptionSwitch = shadowQuery(el, '#transcription') as any
         expect(transcriptionSwitch).not.toBeNull()
 
         // Toggle transcription ON
@@ -378,12 +391,184 @@ describe('extension-settings', () => {
         transcriptionSwitch.dispatchEvent(new Event('input'))
         await elementUpdated(el)
 
-        // Switch should not be disabled
-        expect(transcriptionSwitch.disabled).toBe(false)
-
         // Should have sent start-model-download message
         await vi.waitFor(() => {
             expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({ type: 'start-model-download' })
         })
+
+        // Switch should not be disabled after toggle operation completes
+        await vi.waitFor(() => {
+            expect(transcriptionSwitch.disabled).toBe(false)
+        })
+    })
+
+    test('invalidates stale ON handler when toggled OFF before cache check completes', async () => {
+        let resolveCacheCheck!: (value: boolean) => void
+        mockCheckWebGPUSupport.mockResolvedValueOnce({ supported: true })
+        mockHasCache.mockImplementationOnce(
+            () =>
+                new Promise<boolean>(resolve => {
+                    resolveCacheCheck = resolve
+                }),
+        )
+
+        const screen = render(html`<extension-settings></extension-settings>`)
+        const el = screen.container.querySelector('extension-settings')!
+        await elementUpdated(el)
+
+        const transcriptionSwitch = shadowQuery(el, '#transcription') as any
+        expect(transcriptionSwitch).not.toBeNull()
+
+        // Toggle ON (initiates WebGPU check and then hangs on hasCache())
+        transcriptionSwitch.selected = true
+        transcriptionSwitch.dispatchEvent(new Event('input'))
+        await elementUpdated(el)
+
+        // Switch is locked while operation is pending
+        expect(transcriptionSwitch.disabled).toBe(true)
+
+        // User quickly toggles OFF before cache check resolves
+        transcriptionSwitch.selected = false
+        transcriptionSwitch.dispatchEvent(new Event('input'))
+        await elementUpdated(el)
+
+        // Now resolve the stale hasCache() call with false (which would normally trigger model download)
+        resolveCacheCheck(false)
+        await elementUpdated(el)
+
+        // Stale handler must have been invalidated: start-model-download should not be called
+        expect(chrome.runtime.sendMessage).not.toHaveBeenCalledWith({ type: 'start-model-download' })
+
+        // Config should remain disabled
+        const config = Settings.getConfiguration()
+        expect(config.transcription.enabled).toBe(false)
+    })
+
+    test('detects cache inconsistency and shows redownload warning when transcription is enabled but cache is missing', async () => {
+        mockHasCache.mockResolvedValue(false)
+        const config = Settings.getConfiguration()
+        config.transcription.enabled = true
+        Settings.setConfiguration(config)
+
+        const screen = render(html`<extension-settings></extension-settings>`)
+        const el = screen.container.querySelector('extension-settings')!
+        await elementUpdated(el)
+
+        await vi.waitFor(() => {
+            const hintEl = shadowQuery(el, '.settings-hint')!
+            expect(hintEl.classList.contains('error')).toBe(true)
+            expect(hintEl.textContent?.trim()).toBe(
+                'Model data is missing or corrupted. Please toggle transcription off and on again to redownload the model.',
+            )
+        })
+
+        // Switch remains enabled (selected)
+        const transcriptionSwitch = shadowQuery(el, '#transcription') as any
+        expect(transcriptionSwitch.selected).toBe(true)
+    })
+
+    test('clears cache inconsistency warning when user toggles transcription off', async () => {
+        mockHasCache.mockResolvedValue(false)
+        const config = Settings.getConfiguration()
+        config.transcription.enabled = true
+        Settings.setConfiguration(config)
+
+        const screen = render(html`<extension-settings></extension-settings>`)
+        const el = screen.container.querySelector('extension-settings') as any
+        await elementUpdated(el)
+
+        await vi.waitFor(() => {
+            expect(el.hasCacheInconsistency).toBe(true)
+        })
+
+        // Toggle OFF
+        const transcriptionSwitch = shadowQuery(el, '#transcription') as any
+        transcriptionSwitch.selected = false
+        transcriptionSwitch.dispatchEvent(new Event('input'))
+        await elementUpdated(el)
+
+        await vi.waitFor(() => {
+            expect(el.hasCacheInconsistency).toBe(false)
+            expect(mockClear).toHaveBeenCalled()
+        })
+
+        const hintEl = shadowQuery(el, '.settings-hint')!
+        expect(hintEl.classList.contains('error')).toBe(false)
+    })
+
+    test('re-checks cache consistency on setTabActive(true)', async () => {
+        mockHasCache.mockResolvedValue(true)
+        const config = Settings.getConfiguration()
+        config.transcription.enabled = true
+        Settings.setConfiguration(config)
+
+        const screen = render(html`<extension-settings></extension-settings>`)
+        const el = screen.container.querySelector('extension-settings') as any
+        await elementUpdated(el)
+
+        expect(el.hasCacheInconsistency).toBe(false)
+
+        // Cache disappears while tab was inactive
+        mockHasCache.mockResolvedValue(false)
+
+        await el.setTabActive(true)
+        await elementUpdated(el)
+
+        expect(el.hasCacheInconsistency).toBe(true)
+    })
+
+    test('does not set hasCacheInconsistency if transcription is toggled off while checkCacheConsistency is pending', async () => {
+        let resolveHasCache!: (val: boolean) => void
+        mockHasCache.mockImplementation(
+            () =>
+                new Promise(resolve => {
+                    resolveHasCache = resolve
+                }),
+        )
+
+        const config = Settings.getConfiguration()
+        config.transcription.enabled = true
+        Settings.setConfiguration(config)
+
+        const screen = render(html`<extension-settings></extension-settings>`)
+        const el = screen.container.querySelector('extension-settings') as any
+        await elementUpdated(el)
+
+        // Start pending checkCacheConsistency
+        const checkPromise = el.checkCacheConsistency()
+
+        // User toggles transcription OFF while check is pending
+        const transcriptionSwitch = shadowQuery(el, '#transcription') as any
+        transcriptionSwitch.selected = false
+        transcriptionSwitch.dispatchEvent(new Event('input'))
+        await elementUpdated(el)
+
+        // Resolve hasCache with false (model missing) after OFF toggle
+        resolveHasCache(false)
+        await checkPromise
+        await elementUpdated(el)
+
+        expect(el.hasCacheInconsistency).toBe(false)
+        const hintEl = shadowQuery(el, '.settings-hint')!
+        expect(hintEl.classList.contains('error')).toBe(false)
+    })
+
+    test('scrolls to transcription switch when hash is #transcription', async () => {
+        history.replaceState(null, '', '?tab=settings#transcription')
+
+        const screen = render(html`<extension-settings></extension-settings>`)
+        const el = screen.container.querySelector('extension-settings')!
+        await elementUpdated(el)
+
+        const switchEl = shadowQuery(el, '#transcription')!
+        const scrollSpy = vi.spyOn(switchEl, 'scrollIntoView').mockImplementation(() => {})
+
+        await (el as any).checkAnchorNavigation()
+
+        await vi.waitFor(() => {
+            expect(scrollSpy).toHaveBeenCalledWith({ behavior: 'smooth', block: 'center' })
+        })
+
+        history.replaceState(null, '', window.location.pathname)
     })
 })

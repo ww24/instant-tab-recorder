@@ -22,6 +22,16 @@ vi.mock('../../src/api_client', () => ({
     },
 }))
 
+const hasCacheMock = vi.fn().mockResolvedValue(true)
+vi.mock('../../src/transcription/opfs_model_cache', () => {
+    class MockOPFSModelCache {
+        hasCache = (...args: unknown[]) => hasCacheMock(...args)
+    }
+    return {
+        OPFSModelCache: MockOPFSModelCache,
+    }
+})
+
 // Import player after mocks
 import '../../src/element/player'
 
@@ -121,5 +131,55 @@ describe('extension-player', () => {
 
         await elementUpdated(el)
         expect(shadowQuery(el, 'video track')).toBeNull()
+    })
+
+    test('shows model redownload error and open settings button when hasCache returns false', async () => {
+        hasCacheMock.mockResolvedValue(false)
+        const windowOpenSpy = vi.spyOn(window, 'open').mockImplementation(() => null)
+
+        const screen = render(html`<extension-player></extension-player>`)
+        const el = screen.container.querySelector('extension-player') as any
+        el.path = 'test-recording.webm'
+        await elementUpdated(el)
+
+        await el.startTranscription()
+        await elementUpdated(el)
+
+        const errorBanner = shadowQuery(el, '.error-banner')
+        expect(errorBanner).not.toBeNull()
+        expect(errorBanner?.textContent).toContain('Transcription model is missing or corrupted')
+
+        const openSettingsBtn = shadowQuery(el, '.open-settings-button')
+        expect(openSettingsBtn).not.toBeNull()
+
+        // Click settings button
+        openSettingsBtn?.dispatchEvent(new Event('click'))
+        expect(windowOpenSpy).toHaveBeenCalledWith(
+            expect.stringContaining('option.html?tab=settings#transcription'),
+            '_blank',
+        )
+
+        const chromeMock = getChromeMock()
+        expect(chromeMock.runtime.sendMessage).not.toHaveBeenCalledWith(
+            expect.objectContaining({ type: 'start-transcription' }),
+        )
+    })
+
+    test('starts transcription when hasCache returns true', async () => {
+        hasCacheMock.mockResolvedValue(true)
+
+        const screen = render(html`<extension-player></extension-player>`)
+        const el = screen.container.querySelector('extension-player') as any
+        el.path = 'test-recording.webm'
+        await elementUpdated(el)
+
+        await el.startTranscription()
+        await elementUpdated(el)
+
+        const chromeMock = getChromeMock()
+        expect(chromeMock.runtime.sendMessage).toHaveBeenCalledWith({
+            type: 'start-transcription',
+            path: 'test-recording.webm',
+        })
     })
 })

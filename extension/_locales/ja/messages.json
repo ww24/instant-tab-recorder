@@ -695,6 +695,15 @@
     "settingsTranscriptionUnsupportedShaderF16": {
         "message": "お使いのブラウザまたは GPU は WebGPU の shader-f16 に対応していないため、文字起こし機能を利用できません。"
     },
+    "settingsTranscriptionModelMissingWarning": {
+        "message": "モデルデータが見つからないか破損しています。文字起こしを一度オフにしてから再度オンにして、モデルを再ダウンロードしてください。"
+    },
+    "playerModelRedownloadRequired": {
+        "message": "文字起こしモデルが見つからないか破損しています。設定画面からモデルを再ダウンロードしてください。"
+    },
+    "playerOpenSettings": {
+        "message": "設定を開く"
+    },
     "playerTranscriptionLoadingModel": {
         "message": "モデル読み込み中"
     },
