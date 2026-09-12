@@ -30,8 +30,8 @@ export const REQUIRED_MODEL_FILES: readonly RequiredModelFile[] = [
     {
         repo: WHISPER_MODEL_REPO,
         revision: WHISPER_MODEL_REVISION,
-        name: 'onnx/decoder_model_merged_q4.onnx',
-        size: 334147222,
+        name: 'onnx/decoder_model_merged_q4f16.onnx',
+        size: 193505017,
     },
     // Silero VAD
     { repo: VAD_MODEL_REPO, revision: VAD_MODEL_REVISION, name: 'onnx/model.onnx', size: 2243022 },
