@@ -48,12 +48,12 @@ describe('ModelDownloader', () => {
     it('getTotalSize returns sum of all required model file sizes', () => {
         const expectedTotal = REQUIRED_MODEL_FILES.reduce((sum, f) => sum + f.size, 0)
         expect(ModelDownloader.getTotalSize()).toBe(expectedTotal)
-        expect(ModelDownloader.getTotalSize()).toBeGreaterThan(1.5 * 1024 * 1024 * 1024)
-        expect(ModelDownloader.getTotalSize()).toBeLessThan(1.6 * 1024 * 1024 * 1024)
+        expect(ModelDownloader.getTotalSize()).toBeGreaterThan(1.3 * 1024 * 1024 * 1024)
+        expect(ModelDownloader.getTotalSize()).toBeLessThan(1.5 * 1024 * 1024 * 1024)
     })
 
     it('getFormattedTotalSize formats total size properly', () => {
-        expect(ModelDownloader.getFormattedTotalSize(1)).toBe('1.5 GB')
-        expect(ModelDownloader.getFormattedTotalSize(2)).toBe('1.50 GB')
+        expect(ModelDownloader.getFormattedTotalSize(1)).toBe('1.4 GB')
+        expect(ModelDownloader.getFormattedTotalSize(2)).toBe('1.37 GB')
     })
 })

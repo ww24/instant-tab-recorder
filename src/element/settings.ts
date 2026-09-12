@@ -48,6 +48,8 @@ import { registerFlacEncoder } from '@mediabunny/flac-encoder'
 import { OPFSModelCache } from '../transcription/opfs_model_cache'
 import { ModelDownloader } from '../transcription/model_downloader'
 import { TRANSCRIPTION_LANGUAGES } from '../transcription/languages'
+import { checkWebGPUSupport } from '../transcription/webgpu'
+import type { WebGPUSupportReason } from '../transcription/webgpu'
 
 @customElement('extension-settings')
 export class Settings extends LitElement {
@@ -187,6 +189,9 @@ export class Settings extends LitElement {
                 margin-bottom: 1rem;
                 white-space: pre-line;
             }
+            .settings-hint.error {
+                color: var(--md-sys-color-error, #b3261e);
+            }
             .download-progress-area {
                 margin-top: 0.5rem;
                 margin-bottom: 0.5rem;
@@ -231,6 +236,23 @@ export class Settings extends LitElement {
     private downloadError: string | null = null
 
     @property()
+    private isWebGPUSupported: boolean = true
+
+    @property()
+    private transcriptionUnsupportedReason: WebGPUSupportReason | null = null
+
+    @property()
+    private isCheckingWebGPU: boolean = false
+
+    @property()
+    private isTogglingTranscription: boolean = false
+
+    private transcriptionToggleGeneration: number = 0
+
+    @property()
+    private hasCacheInconsistency: boolean = false
+
+    @property()
     private timerEstimateText: string = ''
 
     private timerEstimateIntervalId: ReturnType<typeof setInterval> | null = null
@@ -253,6 +275,8 @@ export class Settings extends LitElement {
             console.error('Failed to initialize FLAC encoding support.', error)
         }
         await this.validateEncoding()
+        await this.checkCacheConsistency()
+        this.checkAnchorNavigation()
     }
 
     public override render() {
@@ -654,14 +678,23 @@ export class Settings extends LitElement {
                 <div class="settings-group">
                     <label
                         class="switch-label"
-                        title="${t('settingsTranscriptionTitle', ModelDownloader.getFormattedTotalSize())}">
+                        title="${
+                            !this.isWebGPUSupported || this.hasCacheInconsistency
+                                ? this.transcriptionHintText
+                                : t('settingsTranscriptionTitle', ModelDownloader.getFormattedTotalSize())
+                        }">
                         ${t('settingsTranscription')}
                         <md-switch
-                            id="transcription-switch"
+                            id="transcription"
                             ?selected=${live((this.config.transcription?.enabled ?? false) || this.isModelDownloading)}
+                            ?disabled=${live(
+                                !this.isWebGPUSupported || this.isCheckingWebGPU || this.isTogglingTranscription,
+                            )}
                             @input=${this.updateTranscriptionEnabled}></md-switch>
                     </label>
-                    <p class="settings-hint">${this.transcriptionHintText}</p>
+                    <p class="settings-hint ${!this.isWebGPUSupported || this.hasCacheInconsistency ? 'error' : ''}">
+                        ${this.transcriptionHintText}
+                    </p>
 
                     ${
                         this.isModelDownloading
@@ -923,6 +956,15 @@ export class Settings extends LitElement {
     }
 
     private get transcriptionHintText(): string {
+        if (!this.isWebGPUSupported) {
+            if (this.transcriptionUnsupportedReason === 'no-shader-f16') {
+                return t('settingsTranscriptionUnsupportedShaderF16')
+            }
+            return t('settingsTranscriptionUnsupportedWebGPU')
+        }
+        if (this.hasCacheInconsistency && this.config.transcription?.enabled) {
+            return t('settingsTranscriptionModelMissingWarning')
+        }
         const modelSize = ModelDownloader.getFormattedTotalSize()
         if (this.isModelDownloading) {
             return t('settingsTranscriptionDownloadingHint')
@@ -1189,6 +1231,7 @@ export class Settings extends LitElement {
                 case 'model-download-complete':
                     this.isModelDownloading = false
                     this.downloadProgress = null
+                    this.hasCacheInconsistency = false
                     this.config.transcription.enabled = true
                     Settings.setConfiguration(this.config)
                     Settings.syncConfiguration(this.config)
@@ -1233,55 +1276,148 @@ export class Settings extends LitElement {
         }
     }
 
+    /**
+     * Checks whether the transcription model cache is complete when transcription is enabled.
+     * Sets hasCacheInconsistency flag and triggers update if inconsistency is detected.
+     */
+    public async checkCacheConsistency(): Promise<boolean> {
+        if (!this.config.transcription?.enabled || this.isModelDownloading) {
+            this.hasCacheInconsistency = false
+            return true
+        }
+
+        const hasCache = await this.modelCache.hasCache()
+        if (!this.config.transcription?.enabled || this.isModelDownloading) {
+            this.hasCacheInconsistency = false
+            this.requestUpdate()
+            return true
+        }
+
+        this.hasCacheInconsistency = !hasCache
+        this.requestUpdate()
+        return hasCache
+    }
+
+    /**
+     * Called when the Settings tab becomes active/inactive.
+     */
+    public async setTabActive(isActive: boolean) {
+        if (isActive) {
+            await this.checkCacheConsistency()
+            this.checkAnchorNavigation()
+        }
+    }
+
+    private checkAnchorNavigation() {
+        const hash = window.location.hash
+        if (!hash) return
+        const targetId = hash.startsWith('#') ? hash.slice(1) : hash
+        if (targetId === 'transcription') {
+            this.scrollToTranscriptionSwitch()
+        }
+    }
+
+    private scrollToTranscriptionSwitch() {
+        requestAnimationFrame(() => {
+            const switchEl = this.shadowRoot?.querySelector('#transcription')
+            if (switchEl) {
+                switchEl.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                if ('focus' in switchEl && typeof switchEl.focus === 'function') {
+                    switchEl.focus()
+                }
+            }
+        })
+    }
+
     /** ユーザーが意図的にトグルOFFでキャンセルしたことを示すフラグ（エラー抑制用） */
     private isUserCancellingDownload = false
 
     private async updateTranscriptionEnabled(e: Event) {
-        if (!(e.target instanceof MdSwitch)) return
-        const enabled = e.target.selected
+        const target = e.target
+        if (!(target instanceof MdSwitch)) return
+        const enabled = target.selected
 
-        if (enabled) {
-            // トグルON: モデルがキャッシュ済みならそのまま有効化、未キャッシュなら即ダウンロード開始
-            this.downloadError = null
-            const isCached = await this.modelCache.hasCache()
-            if (!isCached) {
-                this.isModelDownloading = true
+        const currentGen = ++this.transcriptionToggleGeneration
+        this.isTogglingTranscription = true
+        this.requestUpdate()
+
+        try {
+            if (enabled) {
+                this.downloadError = null
+                this.isCheckingWebGPU = true
+                this.requestUpdate()
+
+                let gpuSupport
+                try {
+                    gpuSupport = await checkWebGPUSupport()
+                } finally {
+                    this.isCheckingWebGPU = false
+                }
+
+                if (this.transcriptionToggleGeneration !== currentGen) return
+
+                if (!gpuSupport.supported) {
+                    this.isWebGPUSupported = false
+                    this.transcriptionUnsupportedReason = gpuSupport.reason ?? 'no-webgpu'
+                    target.selected = false
+                    this.config.transcription.enabled = false
+                    this.requestUpdate()
+                    return
+                }
+
+                // トグルON: モデルがキャッシュ済みならそのまま有効化、未キャッシュなら即ダウンロード開始
+                const isCached = await this.modelCache.hasCache()
+                if (this.transcriptionToggleGeneration !== currentGen) return
+
+                if (!isCached) {
+                    this.isModelDownloading = true
+                    this.downloadProgress = null
+                    this.requestUpdate()
+                    try {
+                        await chrome.runtime.sendMessage({ type: 'start-model-download' })
+                    } catch (err) {
+                        if (this.transcriptionToggleGeneration !== currentGen) return
+                        console.warn('Failed to send start-model-download message:', err)
+                        this.isModelDownloading = false
+                        this.downloadProgress = null
+                        this.downloadError = err instanceof Error ? err.message : String(err)
+                        this.requestUpdate()
+                    }
+                    return
+                }
+            } else if (this.isModelDownloading) {
+                // トグルOFF（ダウンロード中）: ユーザーキャンセル
+                this.isUserCancellingDownload = true
+                this.isModelDownloading = false
                 this.downloadProgress = null
+                this.downloadError = null
                 this.requestUpdate()
                 try {
-                    await chrome.runtime.sendMessage({ type: 'start-model-download' })
+                    await chrome.runtime.sendMessage({ type: 'cancel-model-download' })
                 } catch (err) {
-                    console.warn('Failed to send start-model-download message:', err)
-                    this.isModelDownloading = false
-                    this.downloadProgress = null
-                    this.downloadError = err instanceof Error ? err.message : String(err)
-                    this.requestUpdate()
+                    console.warn('Failed to send cancel-model-download message:', err)
                 }
-                return
+            } else {
+                // トグルOFF（キャッシュ済み or 無効状態）: キャッシュ削除
+                await this.modelCache.clear()
+                if (this.transcriptionToggleGeneration !== currentGen) return
+                this.hasCacheInconsistency = false
+                this.requestUpdate()
             }
-        } else if (this.isModelDownloading) {
-            // トグルOFF（ダウンロード中）: ユーザーキャンセル
-            this.isUserCancellingDownload = true
-            this.isModelDownloading = false
-            this.downloadProgress = null
-            this.downloadError = null
-            this.requestUpdate()
-            try {
-                await chrome.runtime.sendMessage({ type: 'cancel-model-download' })
-            } catch (err) {
-                console.warn('Failed to send cancel-model-download message:', err)
-            }
-        } else {
-            // トグルOFF（キャッシュ済み or 無効状態）: キャッシュ削除
-            await this.modelCache.clear()
-            this.requestUpdate()
-        }
 
-        const oldVal = { ...this.config }
-        this.config.transcription.enabled = enabled
-        this.requestUpdate('config', oldVal)
-        Settings.setConfiguration(this.config)
-        await Settings.syncConfiguration(this.config)
+            if (this.transcriptionToggleGeneration !== currentGen) return
+
+            const oldVal = { ...this.config }
+            this.config.transcription.enabled = enabled
+            this.requestUpdate('config', oldVal)
+            Settings.setConfiguration(this.config)
+            await Settings.syncConfiguration(this.config)
+        } finally {
+            if (this.transcriptionToggleGeneration === currentGen) {
+                this.isTogglingTranscription = false
+                this.requestUpdate()
+            }
+        }
     }
 }
 

@@ -10,17 +10,17 @@ function renderTab() {
     return screen.container.querySelector('option-tab') as OptionTab
 }
 
-function waitForHashChange(timeoutMs = 1000): Promise<void> {
+function waitForPopState(timeoutMs = 1000): Promise<void> {
     return new Promise<void>((resolve, reject) => {
         const timer = setTimeout(() => {
-            window.removeEventListener('hashchange', onHashChange)
-            reject(new Error(`Timeout waiting for hashchange event (${timeoutMs}ms)`))
+            window.removeEventListener('popstate', onPopState)
+            reject(new Error(`Timeout waiting for popstate event (${timeoutMs}ms)`))
         }, timeoutMs)
-        const onHashChange = () => {
+        const onPopState = () => {
             clearTimeout(timer)
             resolve()
         }
-        window.addEventListener('hashchange', onHashChange, { once: true })
+        window.addEventListener('popstate', onPopState, { once: true })
     })
 }
 
@@ -94,13 +94,13 @@ describe('option-tab', () => {
         expect(slotNames).toContain('panel-support')
     })
 
-    describe('hash handling', () => {
+    describe('tab query param handling', () => {
         afterEach(() => {
-            history.replaceState(null, '', window.location.pathname + window.location.search)
+            history.replaceState(null, '', window.location.pathname)
         })
 
-        test('activates Settings tab when hash is #settings', async () => {
-            history.replaceState(null, '', '#settings')
+        test('activates Settings tab when tab param is settings', async () => {
+            history.replaceState(null, '', '?tab=settings')
             const el = renderTab()
             await elementUpdated(el)
 
@@ -113,8 +113,8 @@ describe('option-tab', () => {
             expect(mainPanel?.hasAttribute('hidden')).toBe(true)
         })
 
-        test('activates Cropping tab when hash is #cropping', async () => {
-            history.replaceState(null, '', '#cropping')
+        test('activates Cropping tab when tab param is cropping', async () => {
+            history.replaceState(null, '', '?tab=cropping')
             const el = renderTab()
             await elementUpdated(el)
 
@@ -127,8 +127,8 @@ describe('option-tab', () => {
             expect(mainPanel?.hasAttribute('hidden')).toBe(true)
         })
 
-        test('activates Support tab when hash is #support', async () => {
-            history.replaceState(null, '', '#support')
+        test('activates Support tab when tab param is support', async () => {
+            history.replaceState(null, '', '?tab=support')
             const el = renderTab()
             await elementUpdated(el)
 
@@ -141,8 +141,8 @@ describe('option-tab', () => {
             expect(mainPanel?.hasAttribute('hidden')).toBe(true)
         })
 
-        test('activates corresponding tab with case-insensitive hash e.g. #SETTINGS', async () => {
-            history.replaceState(null, '', '#SETTINGS')
+        test('activates corresponding tab with case-insensitive tab param e.g. ?tab=SETTINGS', async () => {
+            history.replaceState(null, '', '?tab=SETTINGS')
             const el = renderTab()
             await elementUpdated(el)
 
@@ -152,8 +152,8 @@ describe('option-tab', () => {
             expect(settingsPanel?.hasAttribute('hidden')).toBe(false)
         })
 
-        test('defaults to first tab and clears hash when hash is only #', async () => {
-            history.replaceState(null, '', window.location.pathname + window.location.search + '#')
+        test('activates Records tab when tab param is records', async () => {
+            history.replaceState(null, '', '?tab=records')
             const el = renderTab()
             await elementUpdated(el)
 
@@ -161,18 +161,16 @@ describe('option-tab', () => {
             const mainPanel = shadowQuery(el, '#panel-main')
             expect(mainTab?.hasAttribute('active')).toBe(true)
             expect(mainPanel?.hasAttribute('hidden')).toBe(false)
-            expect(window.location.hash).toBe('')
         })
 
-        test('displays first tab and has no back history when opened with undefined hash in a new tab', async () => {
+        test('displays first tab and has no back history when opened with undefined tab in a new tab', async () => {
             // In a fresh tab session, there is no back history yet
             if ((window as any).navigation) {
                 expect((window as any).navigation.canGoBack).toBe(false)
             }
 
-            // Set undefined hash on current page (simulating opening option page with undefined hash in a fresh tab)
-            history.replaceState(null, '', '#unknown')
-            expect(window.location.hash).toBe('#unknown')
+            history.replaceState(null, '', '?tab=unknown')
+            expect(new URLSearchParams(window.location.search).get('tab')).toBe('unknown')
 
             const pushStateSpy = vi.spyOn(history, 'pushState')
             const replaceStateSpy = vi.spyOn(history, 'replaceState')
@@ -188,12 +186,12 @@ describe('option-tab', () => {
             expect(mainTab?.hasAttribute('active')).toBe(true)
             expect(mainPanel?.hasAttribute('hidden')).toBe(false)
 
-            // The undefined hash should be cleared
-            expect(window.location.hash).toBe('')
+            // The undefined tab query param should be cleared
+            expect(new URLSearchParams(window.location.search).get('tab')).toBeNull()
 
             // Verify no history entry was added and replaceState was used
             expect(pushStateSpy).not.toHaveBeenCalled()
-            expect(replaceStateSpy).toHaveBeenCalledWith(null, '', window.location.pathname + window.location.search)
+            expect(replaceStateSpy).toHaveBeenCalledWith(null, '', window.location.pathname)
             expect(history.length).toBe(lengthBefore)
 
             // There should be no back history in this tab
@@ -205,7 +203,7 @@ describe('option-tab', () => {
             replaceStateSpy.mockRestore()
         })
 
-        test('updates hash when switching tabs and removes hash for first tab', async () => {
+        test('updates tab query param when switching tabs and removes tab param for first tab', async () => {
             const el = renderTab()
             await elementUpdated(el)
 
@@ -217,29 +215,79 @@ describe('option-tab', () => {
 
             // Switch to Settings
             tabs.activeTab = settingsTab
-            expect(window.location.hash).toBe('#settings')
+            tabs.dispatchEvent(new Event('change'))
+            expect(new URLSearchParams(window.location.search).get('tab')).toBe('settings')
 
             // Switch to Cropping
             tabs.activeTab = croppingTab
-            expect(window.location.hash).toBe('#cropping')
+            tabs.dispatchEvent(new Event('change'))
+            expect(new URLSearchParams(window.location.search).get('tab')).toBe('cropping')
 
             // Switch to Support
             tabs.activeTab = supportTab
-            expect(window.location.hash).toBe('#support')
+            tabs.dispatchEvent(new Event('change'))
+            expect(new URLSearchParams(window.location.search).get('tab')).toBe('support')
 
             // Switch back to Records (first tab)
             tabs.activeTab = mainTab
-            expect(window.location.hash).toBe('')
+            tabs.dispatchEvent(new Event('change'))
+            expect(new URLSearchParams(window.location.search).get('tab')).toBeNull()
+            expect(window.location.search).toBe('')
         })
 
-        test('switches tab on hashchange event', async () => {
+        test('clears hash when switching tabs, but retains hash when navigating back in history', async () => {
+            history.replaceState(null, '', '?tab=settings#transcription')
             const el = renderTab()
             await elementUpdated(el)
 
-            // Change hash to #settings
-            const hashChangeToSettings = waitForHashChange()
-            window.location.hash = '#settings'
-            await hashChangeToSettings
+            expect(window.location.hash).toBe('#transcription')
+            expect(window.location.href).toContain('#transcription')
+
+            const tabs = shadowQuery(el, 'md-tabs') as any
+            const croppingTab = shadowQuery(el, '#tab-cropping') as HTMLElement
+
+            // Switch to Cropping: hash should be removed
+            tabs.activeTab = croppingTab
+            tabs.dispatchEvent(new Event('change'))
+            await elementUpdated(el)
+
+            expect(window.location.hash).toBe('')
+            expect(window.location.href).not.toContain('#')
+            expect(new URLSearchParams(window.location.search).get('tab')).toBe('cropping')
+
+            // Navigate back in history: should return to settings tab with #transcription retained
+            let popState = waitForPopState()
+            history.back()
+            await popState
+            await elementUpdated(el)
+
+            expect(new URLSearchParams(window.location.search).get('tab')).toBe('settings')
+            expect(window.location.hash).toBe('#transcription')
+            expect(window.location.href).toContain('#transcription')
+
+            const settingsTab = shadowQuery(el, '#tab-settings')
+            const settingsPanel = shadowQuery(el, '#panel-settings')
+            expect(settingsTab?.hasAttribute('active')).toBe(true)
+            expect(settingsPanel?.hasAttribute('hidden')).toBe(false)
+
+            // Navigate forward in history: should return to cropping tab without hash
+            popState = waitForPopState()
+            history.forward()
+            await popState
+            await elementUpdated(el)
+
+            expect(new URLSearchParams(window.location.search).get('tab')).toBe('cropping')
+            expect(window.location.hash).toBe('')
+            expect(window.location.href).not.toContain('#')
+        })
+
+        test('switches tab on popstate event', async () => {
+            const el = renderTab()
+            await elementUpdated(el)
+
+            // Change url to ?tab=settings
+            history.pushState(null, '', '?tab=settings')
+            window.dispatchEvent(new PopStateEvent('popstate'))
             await elementUpdated(el)
 
             const settingsTab = shadowQuery(el, '#tab-settings')
@@ -247,9 +295,9 @@ describe('option-tab', () => {
             expect(settingsTab?.hasAttribute('active')).toBe(true)
             expect(settingsPanel?.hasAttribute('hidden')).toBe(false)
 
-            // Dispatch hashchange back to empty (first tab)
-            history.replaceState(null, '', window.location.pathname + window.location.search)
-            window.dispatchEvent(new HashChangeEvent('hashchange'))
+            // Dispatch popstate back to empty (first tab)
+            history.pushState(null, '', window.location.pathname)
+            window.dispatchEvent(new PopStateEvent('popstate'))
             await elementUpdated(el)
 
             const mainTab = shadowQuery(el, '#tab-main')
@@ -269,65 +317,68 @@ describe('option-tab', () => {
 
             // Switch tabs: records -> settings -> cropping -> support
             tabs.activeTab = settingsTab
-            expect(window.location.hash).toBe('#settings')
+            tabs.dispatchEvent(new Event('change'))
+            expect(new URLSearchParams(window.location.search).get('tab')).toBe('settings')
 
             tabs.activeTab = croppingTab
-            expect(window.location.hash).toBe('#cropping')
+            tabs.dispatchEvent(new Event('change'))
+            expect(new URLSearchParams(window.location.search).get('tab')).toBe('cropping')
 
             tabs.activeTab = supportTab
-            expect(window.location.hash).toBe('#support')
+            tabs.dispatchEvent(new Event('change'))
+            expect(new URLSearchParams(window.location.search).get('tab')).toBe('support')
 
-            // History back -> #cropping
-            let hashChange = waitForHashChange()
+            // History back -> ?tab=cropping
+            let popState = waitForPopState()
             history.back()
-            await hashChange
+            await popState
             await elementUpdated(el)
 
-            expect(window.location.hash).toBe('#cropping')
+            expect(new URLSearchParams(window.location.search).get('tab')).toBe('cropping')
             const croppingPanel = shadowQuery(el, '#panel-cropping')
             expect(croppingTab.hasAttribute('active')).toBe(true)
             expect(croppingPanel?.hasAttribute('hidden')).toBe(false)
 
-            // History back -> #settings
-            hashChange = waitForHashChange()
+            // History back -> ?tab=settings
+            popState = waitForPopState()
             history.back()
-            await hashChange
+            await popState
             await elementUpdated(el)
 
-            expect(window.location.hash).toBe('#settings')
+            expect(new URLSearchParams(window.location.search).get('tab')).toBe('settings')
             const settingsPanel = shadowQuery(el, '#panel-settings')
             expect(settingsTab.hasAttribute('active')).toBe(true)
             expect(settingsPanel?.hasAttribute('hidden')).toBe(false)
 
             // History back -> empty (records)
-            hashChange = waitForHashChange()
+            popState = waitForPopState()
             history.back()
-            await hashChange
+            await popState
             await elementUpdated(el)
 
-            expect(window.location.hash).toBe('')
+            expect(new URLSearchParams(window.location.search).get('tab')).toBeNull()
             const mainTab = shadowQuery(el, '#tab-main')
             const mainPanel = shadowQuery(el, '#panel-main')
             expect(mainTab?.hasAttribute('active')).toBe(true)
             expect(mainPanel?.hasAttribute('hidden')).toBe(false)
 
-            // History forward -> #settings
-            hashChange = waitForHashChange()
+            // History forward -> ?tab=settings
+            popState = waitForPopState()
             history.forward()
-            await hashChange
+            await popState
             await elementUpdated(el)
 
-            expect(window.location.hash).toBe('#settings')
+            expect(new URLSearchParams(window.location.search).get('tab')).toBe('settings')
             expect(settingsTab.hasAttribute('active')).toBe(true)
             expect(settingsPanel?.hasAttribute('hidden')).toBe(false)
 
-            // History forward -> #cropping
-            hashChange = waitForHashChange()
+            // History forward -> ?tab=cropping
+            popState = waitForPopState()
             history.forward()
-            await hashChange
+            await popState
             await elementUpdated(el)
 
-            expect(window.location.hash).toBe('#cropping')
+            expect(new URLSearchParams(window.location.search).get('tab')).toBe('cropping')
             expect(croppingTab.hasAttribute('active')).toBe(true)
             expect(croppingPanel?.hasAttribute('hidden')).toBe(false)
         })
@@ -341,69 +392,71 @@ describe('option-tab', () => {
             const mainTab = shadowQuery(el, '#tab-main') as HTMLElement
 
             tabs.activeTab = settingsTab
-            expect(window.location.hash).toBe('#settings')
+            tabs.dispatchEvent(new Event('change'))
+            expect(new URLSearchParams(window.location.search).get('tab')).toBe('settings')
 
-            // Switch to 1st tab (removes hash via pushState)
+            // Switch to 1st tab (removes tab param via pushState)
             tabs.activeTab = mainTab
-            expect(window.location.hash).toBe('')
+            tabs.dispatchEvent(new Event('change'))
+            expect(new URLSearchParams(window.location.search).get('tab')).toBeNull()
             const mainPanel = shadowQuery(el, '#panel-main')
             expect(mainTab.hasAttribute('active')).toBe(true)
             expect(mainPanel?.hasAttribute('hidden')).toBe(false)
 
-            // History back -> #settings
-            const backHashChange = waitForHashChange()
+            // History back -> ?tab=settings
+            const backPopState = waitForPopState()
             history.back()
-            await backHashChange
+            await backPopState
             await elementUpdated(el)
 
-            expect(window.location.hash).toBe('#settings')
+            expect(new URLSearchParams(window.location.search).get('tab')).toBe('settings')
             const settingsPanel = shadowQuery(el, '#panel-settings')
             expect(settingsTab.hasAttribute('active')).toBe(true)
             expect(settingsPanel?.hasAttribute('hidden')).toBe(false)
 
             // History forward -> empty (records)
-            const forwardHashChange = waitForHashChange()
+            const forwardPopState = waitForPopState()
             history.forward()
-            await forwardHashChange
+            await forwardPopState
             await elementUpdated(el)
 
-            expect(window.location.hash).toBe('')
+            expect(new URLSearchParams(window.location.search).get('tab')).toBeNull()
             expect(mainTab.hasAttribute('active')).toBe(true)
             expect(mainPanel?.hasAttribute('hidden')).toBe(false)
         })
 
-        test('displays first tab and does not leave undefined hash in history when changing hash on already opened page', async () => {
+        test('displays first tab and does not leave undefined tab in history when changing query on already opened page', async () => {
             const el = renderTab()
             await elementUpdated(el)
 
             const tabs = shadowQuery(el, 'md-tabs') as any
             const settingsTab = shadowQuery(el, '#tab-settings') as HTMLElement
 
-            // Set up an established history entry: switch to #settings
+            // Set up an established history entry: switch to settings
             tabs.activeTab = settingsTab
-            expect(window.location.hash).toBe('#settings')
+            tabs.dispatchEvent(new Event('change'))
+            expect(new URLSearchParams(window.location.search).get('tab')).toBe('settings')
 
-            // User/browser changes hash to an undefined hash on the opened page
-            const hashChange = waitForHashChange()
-            window.location.hash = '#undefined-tab'
-            await hashChange
+            // User/browser changes query to an undefined tab on the opened page
+            history.pushState(null, '', '?tab=undefined-tab')
+            window.dispatchEvent(new PopStateEvent('popstate'))
             await elementUpdated(el)
 
-            // 1st tab should be displayed, and the undefined hash should be replaced (cleared)
+            // 1st tab should be displayed, and the undefined tab should be replaced (cleared)
             const mainTab = shadowQuery(el, '#tab-main')
             const mainPanel = shadowQuery(el, '#panel-main')
             expect(mainTab?.hasAttribute('active')).toBe(true)
             expect(mainPanel?.hasAttribute('hidden')).toBe(false)
-            expect(window.location.hash).toBe('')
+            expect(new URLSearchParams(window.location.search).get('tab')).toBeNull()
 
-            // Undefined hash must not remain in history:
-            // Going back should directly return to #settings, NOT #undefined-tab
-            const backHashChange = waitForHashChange()
+            // Undefined tab must not remain in history:
+            // Going back should directly return to ?tab=settings, NOT ?tab=undefined-tab
+            const backPopState = waitForPopState()
             history.back()
-            await backHashChange
+            await backPopState
             await elementUpdated(el)
 
-            expect(window.location.hash).toBe('#settings')
+            expect(new URLSearchParams(window.location.search).get('tab')).toBe('settings')
             expect(settingsTab.hasAttribute('active')).toBe(true)
         })
 
@@ -415,7 +468,8 @@ describe('option-tab', () => {
             const settingsTab = shadowQuery(el, '#tab-settings') as HTMLElement
 
             tabs.activeTab = settingsTab
-            expect(window.location.hash).toBe('#settings')
+            tabs.dispatchEvent(new Event('change'))
+            expect(new URLSearchParams(window.location.search).get('tab')).toBe('settings')
 
             const lengthBefore = history.length
 
@@ -423,8 +477,38 @@ describe('option-tab', () => {
             tabs.dispatchEvent(new Event('change'))
             await elementUpdated(el)
 
-            expect(window.location.hash).toBe('#settings')
+            expect(new URLSearchParams(window.location.search).get('tab')).toBe('settings')
             expect(history.length).toBe(lengthBefore)
+        })
+
+        test('notifies settings tab when switching to settings tab', async () => {
+            const setTabActiveSpy = vi.fn()
+            const mockSettings = document.createElement('div') as any
+            mockSettings.setTabActive = setTabActiveSpy
+            document.body.appendChild(mockSettings)
+
+            vi.spyOn(customElements, 'whenDefined').mockResolvedValue(undefined as any)
+            vi.spyOn(document, 'querySelector').mockImplementation((selector: string) => {
+                if (selector === 'extension-settings') return mockSettings
+                return null
+            })
+
+            const el = renderTab()
+            await elementUpdated(el)
+
+            const tabs = shadowQuery(el, 'md-tabs') as any
+            const settingsTab = shadowQuery(el, '#tab-settings') as HTMLElement
+
+            tabs.activeTab = settingsTab
+            tabs.dispatchEvent(new Event('change'))
+            await elementUpdated(el)
+
+            await vi.waitFor(() => {
+                expect(setTabActiveSpy).toHaveBeenCalledWith(true)
+            })
+
+            mockSettings.remove()
+            vi.restoreAllMocks()
         })
     })
 })

@@ -222,7 +222,7 @@ class WhisperPipelineManager {
 
         const dtype = {
             encoder_model: 'fp16',
-            decoder_model_merged: 'q4',
+            decoder_model_merged: 'q4f16',
         } as const
 
         try {

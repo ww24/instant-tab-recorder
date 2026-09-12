@@ -6,42 +6,54 @@ import { MdTabs } from '@material/web/tabs/tabs'
 import { Tab } from '@material/web/tabs/internal/tab'
 import '@material/web/icon/icon'
 import type { Cropping } from './cropping'
+import type { Settings } from './settings'
 import { t } from '../i18n'
 
 interface TabDefinition {
     id: string
     panelId: string
-    hash: string
+    param: string
 }
 
 const TAB_DEFINITIONS: readonly TabDefinition[] = [
-    { id: 'tab-main', panelId: 'panel-main', hash: '' },
-    { id: 'tab-settings', panelId: 'panel-settings', hash: '#settings' },
-    { id: 'tab-cropping', panelId: 'panel-cropping', hash: '#cropping' },
-    { id: 'tab-support', panelId: 'panel-support', hash: '#support' },
+    { id: 'tab-main', panelId: 'panel-main', param: '' },
+    { id: 'tab-settings', panelId: 'panel-settings', param: 'settings' },
+    { id: 'tab-cropping', panelId: 'panel-cropping', param: 'cropping' },
+    { id: 'tab-support', panelId: 'panel-support', param: 'support' },
 ] as const
 
-function getTabByHash(hash: string): TabDefinition {
-    const cleanHash = hash.startsWith('#') ? hash : hash ? `#${hash}` : ''
-    return (
-        TAB_DEFINITIONS.find(tab => tab.hash !== '' && tab.hash.toLowerCase() === cleanHash.toLowerCase()) ??
-        TAB_DEFINITIONS[0]
-    )
+function getTabByParam(search: string): TabDefinition {
+    const params = new URLSearchParams(search)
+    const tabParam = params.get('tab')?.toLowerCase() ?? ''
+    if (tabParam === 'records' || tabParam === '') {
+        return TAB_DEFINITIONS[0]
+    }
+    return TAB_DEFINITIONS.find(tab => tab.param !== '' && tab.param.toLowerCase() === tabParam) ?? TAB_DEFINITIONS[0]
 }
 
-function updateHash(hash: string, replace?: boolean) {
-    if (replace) {
-        history.replaceState(null, '', window.location.pathname + window.location.search)
-        return
+function updateTabQuery(param: string, options?: { replace?: boolean; clearHash?: boolean }) {
+    const url = new URL(window.location.href)
+    if (param) {
+        url.searchParams.set('tab', param)
+    } else {
+        url.searchParams.delete('tab')
     }
-    if (hash) {
-        if (window.location.hash !== hash) {
-            history.pushState(null, '', hash)
-        }
-        return
+
+    if (options?.clearHash) {
+        url.hash = ''
     }
-    if (window.location.hash) {
-        history.pushState(null, '', window.location.pathname + window.location.search)
+
+    const newSearch = url.searchParams.toString() ? `?${url.searchParams.toString()}` : ''
+    const newHash = url.hash ? url.hash : ''
+    const newUrl = `${url.pathname}${newSearch}${newHash}`
+
+    const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`
+    if (newUrl === currentUrl) return
+
+    if (options?.replace) {
+        history.replaceState(null, '', newUrl)
+    } else {
+        history.pushState(null, '', newUrl)
     }
 }
 
@@ -53,22 +65,25 @@ export class OptionTab extends LitElement {
 
     public override connectedCallback() {
         super.connectedCallback()
-        window.addEventListener('hashchange', this.handleHashChange)
+        window.addEventListener('popstate', this.handlePopState)
     }
 
     public override disconnectedCallback() {
         super.disconnectedCallback()
-        window.removeEventListener('hashchange', this.handleHashChange)
+        window.removeEventListener('popstate', this.handlePopState)
     }
 
     public override firstUpdated() {
-        const currentHash = window.location.hash
-        const activeTab = getTabByHash(currentHash)
-        if (currentHash && activeTab.hash === '') {
-            updateHash('', true)
+        const currentTabParam = new URLSearchParams(window.location.search).get('tab')
+        const activeTab = getTabByParam(window.location.search)
+        if (currentTabParam && activeTab.param === '' && currentTabParam !== 'records') {
+            updateTabQuery('', { replace: true, clearHash: false })
         }
         if (activeTab.id === 'tab-cropping') {
             OptionTab.notifyCroppingTabState(true)
+        }
+        if (activeTab.id === 'tab-settings') {
+            OptionTab.notifySettingsTabState(true)
         }
     }
 
@@ -86,6 +101,14 @@ export class OptionTab extends LitElement {
         }
     }
 
+    private static async notifySettingsTabState(isActive: boolean) {
+        await customElements.whenDefined('extension-settings')
+        const settingsElement = document.querySelector<Settings>('extension-settings')
+        if (settingsElement && typeof settingsElement.setTabActive === 'function') {
+            settingsElement.setTabActive(isActive)
+        }
+    }
+
     private syncTabPanels(tabs: MdTabs, activeTab: Tab | null) {
         tabs.tabs.forEach(tab => {
             if (tab === activeTab) return
@@ -97,6 +120,9 @@ export class OptionTab extends LitElement {
             // Notify cropping tab when it becomes inactive
             if (tab.id === 'tab-cropping') {
                 OptionTab.notifyCroppingTabState(false)
+            }
+            if (tab.id === 'tab-settings') {
+                OptionTab.notifySettingsTabState(false)
             }
         })
 
@@ -110,9 +136,15 @@ export class OptionTab extends LitElement {
         if (activeTab.id === 'tab-cropping') {
             OptionTab.notifyCroppingTabState(true)
         }
+        if (activeTab.id === 'tab-settings') {
+            OptionTab.notifySettingsTabState(true)
+        }
     }
 
+    private isPopStateNavigating = false
+
     private changeTab = (e: Event) => {
+        if (this.isPopStateNavigating) return
         if (!(e.target instanceof MdTabs)) return
         const tabs = e.target
 
@@ -121,30 +153,37 @@ export class OptionTab extends LitElement {
         const activeTabId = tabs.activeTab?.id
         const tabDef = TAB_DEFINITIONS.find(item => item.id === activeTabId)
         if (tabDef) {
-            updateHash(tabDef.hash)
+            updateTabQuery(tabDef.param, { clearHash: true })
         }
     }
 
-    private handleHashChange = () => {
-        const activeTabDef = getTabByHash(window.location.hash)
-        if (window.location.hash && activeTabDef.hash === '') {
-            updateHash('', true)
-        }
-        const tabs = this.shadowRoot?.querySelector<MdTabs>('md-tabs')
-        if (!tabs) return
+    private handlePopState = () => {
+        this.isPopStateNavigating = true
+        try {
+            const currentTabParam = new URLSearchParams(window.location.search).get('tab')
+            const activeTabDef = getTabByParam(window.location.search)
+            if (currentTabParam && activeTabDef.param === '' && currentTabParam !== 'records') {
+                updateTabQuery('', { replace: true, clearHash: false })
+            }
+            const tabs = this.shadowRoot?.querySelector<MdTabs>('md-tabs')
+            if (!tabs) return
 
-        const targetTab = tabs.tabs.find(tab => tab.id === activeTabDef.id)
-        if (!targetTab) return
+            const targetTab = tabs.tabs.find(tab => tab.id === activeTabDef.id)
+            if (!targetTab) return
 
-        if (tabs.activeTab !== targetTab) {
-            tabs.activeTab = targetTab
-        } else {
+            if (tabs.activeTab !== targetTab) {
+                tabs.activeTab = targetTab
+            }
             this.syncTabPanels(tabs, targetTab)
+        } finally {
+            queueMicrotask(() => {
+                this.isPopStateNavigating = false
+            })
         }
     }
 
     public override render() {
-        const activeTab = getTabByHash(window.location.hash)
+        const activeTab = getTabByParam(window.location.search)
 
         return html`
             <md-tabs @change=${this.changeTab}>

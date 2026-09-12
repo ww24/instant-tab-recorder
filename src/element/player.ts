@@ -17,6 +17,7 @@ import type { Message } from '../message'
 import { t } from '../i18n'
 import { applyTheme } from '../theme'
 import { recordingApi } from '../api_client'
+import { OPFSModelCache } from '../transcription/opfs_model_cache'
 
 @customElement('extension-player')
 export class Player extends LitElement {
@@ -198,6 +199,10 @@ export class Player extends LitElement {
             margin: 0;
         }
 
+        .error-banner .open-settings-button {
+            margin-top: 8px;
+        }
+
         md-dialog {
             width: 480px;
             --md-dialog-container-color: var(--theme-dialog-bg, var(--md-sys-color-surface-container-high, #1e1e2a));
@@ -238,11 +243,13 @@ export class Player extends LitElement {
     @state() private isTranscribing = false
     @state() private transcribeProgress: { loaded: number; total: number; stage?: string } | null = null
     @state() private transcribeError: string | null = null
+    @state() private needsModelRedownload = false
     @state() private showDownloadMenu = false
     @state() private showDeleteDialog = false
     @state() private trackVersion = 0
     @state() private isControlled = typeof navigator !== 'undefined' && navigator.serviceWorker?.controller != null
 
+    private readonly modelCache = new OPFSModelCache()
     private messageListener?: (message: Message) => void
 
     constructor() {
@@ -382,11 +389,28 @@ export class Player extends LitElement {
         }
     }
 
-    private startTranscription() {
+    private async startTranscription() {
         if (!this.path) return
         this.isTranscribing = true
         this.transcribeError = null
         this.transcribeProgress = null
+        this.needsModelRedownload = false
+
+        try {
+            const hasCache = await this.modelCache.hasCache()
+            if (!hasCache) {
+                this.isTranscribing = false
+                this.needsModelRedownload = true
+                this.transcribeError = t('playerModelRedownloadRequired')
+                return
+            }
+        } catch (e) {
+            console.error('Failed to check model cache:', e)
+            this.isTranscribing = false
+            this.needsModelRedownload = true
+            this.transcribeError = t('playerModelRedownloadRequired')
+            return
+        }
 
         chrome.runtime
             .sendMessage({
@@ -398,6 +422,11 @@ export class Player extends LitElement {
                 this.isTranscribing = false
                 this.transcribeError = e instanceof Error ? e.message : String(e)
             })
+    }
+
+    private openSettingsForTranscription() {
+        const url = chrome.runtime.getURL('option.html?tab=settings#transcription')
+        window.open(url, '_blank')
     }
 
     private handleTimeUpdate(e: Event) {
@@ -534,6 +563,18 @@ export class Player extends LitElement {
                                               ? html`
                                                     <div class="error-banner">
                                                         <p>${this.transcribeError}</p>
+                                                        ${
+                                                            this.needsModelRedownload
+                                                                ? html`
+                                                                      <md-filled-tonal-button
+                                                                          class="open-settings-button"
+                                                                          @click=${this.openSettingsForTranscription}>
+                                                                          <md-icon slot="icon">settings</md-icon>
+                                                                          ${t('playerOpenSettings')}
+                                                                      </md-filled-tonal-button>
+                                                                  `
+                                                                : ''
+                                                        }
                                                     </div>
                                                 `
                                               : ''
