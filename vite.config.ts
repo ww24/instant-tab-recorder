@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync, existsSync, appendFileSync } from 'fs'
 import path from 'path'
 import { defineConfig, type Plugin } from 'vite'
+import { customElementsManifestCheckPlugin } from './scripts/check_custom_elements_manifest.ts'
 
 const pkg = JSON.parse(readFileSync(path.resolve(import.meta.dirname, 'package.json'), 'utf-8'))
 const manifestPath = path.resolve(import.meta.dirname, 'extension/manifest.json')
@@ -37,7 +38,7 @@ function appendModelLicensesPlugin(): Plugin {
 
 export default defineConfig(({ mode }) => ({
     base: '/dist/',
-    plugins: [appendModelLicensesPlugin()],
+    plugins: [customElementsManifestCheckPlugin(), appendModelLicensesPlugin()],
     build: {
         outDir: 'extension/dist',
         emptyOutDir: true,
