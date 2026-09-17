@@ -1,8 +1,6 @@
 import { html, css, LitElement } from 'lit'
 import { customElement, property, state } from 'lit/decorators.js'
 import { live } from 'lit/directives/live.js'
-import '@material/web/switch/switch'
-import '@material/web/textfield/filled-text-field'
 import { MdSwitch } from '@material/web/switch/switch'
 import { MdFilledTextField } from '@material/web/textfield/filled-text-field'
 import { Configuration, CropRegion, Resolution, isAudioOnly } from '../configuration'
@@ -180,8 +178,8 @@ export class Cropping extends LitElement {
     private updateRegion(field: keyof CropRegion) {
         return (e: Event) => {
             if (!this.canChangeRegion) return
-            const target = e.target as MdFilledTextField
-            let value = parseInt(target.value, 10)
+            if (!(e.target instanceof MdFilledTextField)) return
+            let value = parseInt(e.target.value, 10)
             if (isNaN(value)) return
 
             // Apply constraints based on field type

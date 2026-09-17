@@ -1,7 +1,8 @@
 {
   "include": [
     "src/**/*.ts",
-    "tests/**/*.ts"
+    "tests/**/*.ts",
+    "scripts/**/*.ts"
   ],
   "compilerOptions": {
     "target": "es2022",
