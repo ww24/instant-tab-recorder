@@ -1,6 +1,5 @@
 import { html, LitElement } from 'lit'
 import { customElement } from 'lit/decorators.js'
-import '@material/web/tabs/tabs'
 import '@material/web/tabs/primary-tab'
 import { MdTabs } from '@material/web/tabs/tabs'
 import { Tab } from '@material/web/tabs/internal/tab'
