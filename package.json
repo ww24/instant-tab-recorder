@@ -37,7 +37,7 @@
   },
   "devDependencies": {
     "@googleapis/chromewebstore": "^5.0.0",
-    "@types/chrome": "^0.2.5",
+    "@types/chrome": "^0.2.9",
     "@types/dom-mediacapture-transform": "^0.1.12",
     "@types/node": "^26.5.1",
     "@vitest/browser-playwright": "^5.0.0",
