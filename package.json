@@ -39,7 +39,7 @@
     "@googleapis/chromewebstore": "^5.0.0",
     "@types/chrome": "^0.2.5",
     "@types/dom-mediacapture-transform": "^0.1.12",
-    "@types/node": "^26.2.0",
+    "@types/node": "^26.5.1",
     "@vitest/browser-playwright": "^5.0.0",
     "@vitest/coverage-v8": "^5.0.0",
     "google-auth-library": "^11.0.2",
