@@ -56,6 +56,9 @@ export function handleMessage(message: Message, deps: ServiceWorkerDeps): Handle
         case 'start-model-download':
         case 'cancel-model-download':
         case 'query-model-download-status':
+        case 'start-summary':
+        case 'query-summary-status':
+        case 'cancel-tasks-for-path':
             return { response: handleForwardToOffscreen(message, deps), fireAndForget: true }
     }
     return null
@@ -67,7 +70,8 @@ async function handleForwardToOffscreen(message: Message, deps: ServiceWorkerDep
 
     switch (message.type) {
         case 'start-transcription':
-        case 'start-model-download': {
+        case 'start-model-download':
+        case 'start-summary': {
             if (!isOpen) {
                 await deps.ensureOffscreenDocument()
                 await deps.sendRuntimeMessage(message)
@@ -84,10 +88,21 @@ async function handleForwardToOffscreen(message: Message, deps: ServiceWorkerDep
             }
             break
         }
+        case 'query-summary-status': {
+            if (!isOpen) {
+                await deps.sendRuntimeMessage({
+                    type: 'summary-status-response',
+                    path: message.path,
+                    isSummarizing: false,
+                })
+            }
+            break
+        }
         case 'query-model-download-status': {
             if (!isOpen) {
                 await deps.sendRuntimeMessage({
                     type: 'model-download-status-response',
+                    modelType: message.modelType,
                     isDownloading: false,
                     progress: null,
                 })
@@ -96,6 +111,10 @@ async function handleForwardToOffscreen(message: Message, deps: ServiceWorkerDep
         }
         case 'cancel-model-download': {
             // If offscreen document is not open, no download is active
+            break
+        }
+        case 'cancel-tasks-for-path': {
+            // If offscreen document is not open, no tasks are active
             break
         }
     }

@@ -1,7 +1,6 @@
 /* eslint-disable unicorn/require-post-message-target-origin */
 import {
     pipeline,
-    env,
     PreTrainedModel,
     PretrainedConfig,
     Tensor,
@@ -11,52 +10,19 @@ import {
 } from '@huggingface/transformers'
 // @ts-ignore -- Vite `?url` asset import has no type declarations
 import ortWasmUrl from 'onnxruntime-web/ort-wasm-simd-threaded.asyncify.wasm?url'
-import { OPFSModelCache } from './opfs_model_cache'
+import { setupTransformersEnv, mapWebGPUError } from '../ml/worker_env'
 import { normalizeLoudness } from './loudness'
 import { cleanTranscriptionText } from './utils'
-import { VAD_MODEL_REPO } from './model_files'
+import { VAD_MODEL_REPO, REQUIRED_TRANSCRIPTION_MODEL_FILES } from './model_files'
 import type { WorkerInMessage, WorkerOutMessage, TranscriptionSegment, WorkerTimings } from './types'
+import { TRANSCRIPTION_MODEL_CACHE_DIR } from './model_downloader'
 
-// Configure environment
-env.allowRemoteModels = false
-env.allowLocalModels = true
-env.useWasmCache = false
-
-// Initialize OPFS cache for permanent model file caching
-const opfsCache = new OPFSModelCache()
-env.useCustomCache = true
-env.customCache = opfsCache
-env.useBrowserCache = false
-env.useFSCache = false
-
-if (typeof navigator !== 'undefined' && navigator.storage?.persist) {
-    navigator.storage.persist().catch(() => {})
-}
-
-function resolveWasmUrl(url: string): string {
-    if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('chrome-extension://')) {
-        return url
-    }
-    let relativePath = url.startsWith('/') ? url.slice(1) : url
-    if (!relativePath.startsWith('dist/')) {
-        relativePath = `dist/${relativePath}`
-    }
-    if (typeof chrome !== 'undefined' && chrome.runtime?.getURL) {
-        return chrome.runtime.getURL(relativePath)
-    }
-    if (typeof self !== 'undefined' && self.location?.origin?.startsWith('chrome-extension://')) {
-        return new URL(relativePath, self.location.origin + '/').href
-    }
-    return new URL(url, import.meta.url).href
-}
-
-// Configure ONNX Runtime Web WASM path via Vite bundled asset
-if (env.backends?.onnx?.wasm) {
-    env.backends.onnx.wasm.wasmPaths = {
-        wasm: resolveWasmUrl(ortWasmUrl),
-    }
-    env.backends.onnx.wasm.numThreads = 1
-}
+// Configure environment and OPFS cache
+setupTransformersEnv({
+    cacheDirName: TRANSCRIPTION_MODEL_CACHE_DIR,
+    requiredFiles: REQUIRED_TRANSCRIPTION_MODEL_FILES,
+    ortWasmUrl,
+})
 
 interface SpeechInterval {
     start: number // seconds
@@ -246,16 +212,7 @@ class WhisperPipelineManager {
             this.currentModelId = modelId
             return this.instance
         } catch (err: unknown) {
-            const errStr = String(err)
-            if (
-                errStr.includes('FP16') ||
-                errStr.includes('fp16') ||
-                errStr.includes('shader') ||
-                errStr.includes('unsupported')
-            ) {
-                throw new Error('WEBGPU_FP16_NOT_SUPPORTED', { cause: err })
-            }
-            throw err
+            throw mapWebGPUError(err)
         }
     }
 

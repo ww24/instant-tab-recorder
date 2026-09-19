@@ -382,13 +382,14 @@ describe('handleForwardToOffscreen lifecycle', () => {
             ensureOffscreenDocument: vi.fn().mockResolvedValue(undefined),
             sendRuntimeMessage: vi.fn().mockResolvedValue(undefined),
         })
-        const msg: Message = { type: 'query-model-download-status' }
+        const msg: Message = { type: 'query-model-download-status', modelType: 'transcription' }
         const result = handleMessage(msg, deps)
         await result!.response
 
         expect(deps.ensureOffscreenDocument).not.toHaveBeenCalled()
         expect(deps.sendRuntimeMessage).toHaveBeenCalledWith({
             type: 'model-download-status-response',
+            modelType: 'transcription',
             isDownloading: false,
             progress: null,
         })
@@ -400,7 +401,7 @@ describe('handleForwardToOffscreen lifecycle', () => {
             ensureOffscreenDocument: vi.fn().mockResolvedValue(undefined),
             sendRuntimeMessage: vi.fn().mockResolvedValue(undefined),
         })
-        const msg: Message = { type: 'cancel-model-download' }
+        const msg: Message = { type: 'cancel-model-download', modelType: 'transcription' }
         const result = handleMessage(msg, deps)
         await result!.response
 

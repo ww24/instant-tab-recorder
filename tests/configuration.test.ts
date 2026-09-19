@@ -13,6 +13,7 @@ import {
     isUITheme,
     type RecordingTimerReport,
 } from '../src/configuration'
+import { DEFAULT_SUMMARY_PROMPT } from '../src/summary/prompt'
 
 describe('migrateFromMimeType', () => {
     describe('WebM container', () => {
@@ -464,5 +465,34 @@ describe('Configuration.transcription', () => {
             enabled: false,
             language: 'japanese',
         })
+    })
+
+    it('should include summary in filterForReport', () => {
+        const config = new Configuration()
+        config.summary = { enabled: true, prompt: 'custom prompt' }
+        const report = Configuration.filterForReport(config)
+        expect(report.summary).toEqual({ enabled: true })
+    })
+
+    it('should exclude summary from filterForSync', () => {
+        const config = new Configuration()
+        config.summary = { enabled: true, prompt: 'custom prompt' }
+        const synced = Configuration.filterForSync(config)
+        expect('summary' in synced).toBe(false)
+    })
+
+    it('should reset summary on restoreDefault', () => {
+        const config = new Configuration()
+        config.summary = { enabled: true, prompt: 'custom prompt' }
+        const restored = Configuration.restoreDefault(config)
+        expect(restored.summary).toEqual({ enabled: false, prompt: DEFAULT_SUMMARY_PROMPT })
+    })
+
+    it('should migrate legacy summary config without prompt to include default prompt', () => {
+        const config = new Configuration()
+        ;(config.summary as any).prompt = undefined
+        const migrated = Configuration.migrate(config, { summary: { enabled: true } })
+        expect(migrated).toBe(true)
+        expect(config.summary.prompt).toBe(DEFAULT_SUMMARY_PROMPT)
     })
 })

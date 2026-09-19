@@ -1,6 +1,7 @@
 import type { Configuration, RecordingInfo, Resolution, CropRegion } from './configuration'
 import type {
     Message,
+    ModelType,
     StartRecording,
     StartRecordingResponse,
     StartTrigger,
@@ -13,7 +14,9 @@ import type { Event, ExceptionMetadata } from './sentry_event'
 import type { RecordingDB, RecordingRecord } from './recording_db'
 import { generateThumbnail, NoVideoError } from './thumbnail'
 import type { TranscriptionSession } from './transcription/session'
-import type { ModelDownloader } from './transcription/model_downloader'
+import type { TranscriptionModelDownloader } from './transcription/model_downloader'
+import type { SummarySession } from './summary/session'
+import type { SummaryModelDownloader } from './summary/model_downloader'
 
 // ---------- dependency interfaces ----------
 
@@ -45,7 +48,9 @@ export interface OffscreenDeps {
     recordingDB: RecordingDB
     getVideoFile(path: string): Promise<File>
     transcriptionSession?: TranscriptionSession
-    modelDownloader?: ModelDownloader
+    transcriptionModelDownloader?: TranscriptionModelDownloader
+    summarySession?: SummarySession
+    summaryModelDownloader?: SummaryModelDownloader
     closeDocument?: () => void
 }
 
@@ -60,13 +65,15 @@ export class OffscreenHandler {
     constructor(private readonly deps: OffscreenDeps) {}
 
     /**
-     * Returns true if there are active recording, transcription, or model download tasks.
+     * Returns true if there are active recording, transcription, summary, or model download tasks.
      */
     isBusy(): boolean {
         const isRecording = this.currentRecordingStartAtMs !== null || this.deps.getLocationHash() === '#recording'
         const isTranscribing = this.deps.transcriptionSession?.hasActiveTasks() ?? false
-        const isDownloading = this.deps.modelDownloader?.isDownloading ?? false
-        return isRecording || isTranscribing || isDownloading
+        const isDownloading = this.deps.transcriptionModelDownloader?.isDownloading ?? false
+        const isSummarizing = this.deps.summarySession?.hasActiveTasks() ?? false
+        const isSummaryDownloading = this.deps.summaryModelDownloader?.isDownloading ?? false
+        return isRecording || isTranscribing || isDownloading || isSummarizing || isSummaryDownloading
     }
 
     /**
@@ -108,11 +115,17 @@ export class OffscreenHandler {
             case 'query-transcription-status':
                 return this.handleQueryTranscriptionStatus(message.path)
             case 'start-model-download':
-                return this.handleStartModelDownload()
+                return this.handleStartModelDownload(message.modelType)
             case 'cancel-model-download':
-                return this.handleCancelModelDownload()
+                return this.handleCancelModelDownload(message.modelType)
             case 'query-model-download-status':
-                return this.handleQueryModelDownloadStatus()
+                return this.handleQueryModelDownloadStatus(message.modelType)
+            case 'start-summary':
+                return this.handleStartSummary(message.path)
+            case 'query-summary-status':
+                return this.handleQuerySummaryStatus(message.path)
+            case 'cancel-tasks-for-path':
+                return this.handleCancelTasksForPath(message.path)
             case 'close-offscreen-if-idle':
                 this.maybeClose()
                 return null
@@ -400,20 +413,28 @@ export class OffscreenHandler {
         })
     }
 
-    private async handleStartModelDownload(): Promise<void> {
-        if (!this.deps.modelDownloader) {
+    private getModelDownloader(
+        modelType: ModelType,
+    ): TranscriptionModelDownloader | SummaryModelDownloader | undefined {
+        return modelType === 'transcription' ? this.deps.transcriptionModelDownloader : this.deps.summaryModelDownloader
+    }
+
+    private async handleStartModelDownload(modelType: ModelType): Promise<void> {
+        const downloader = this.getModelDownloader(modelType)
+        if (!downloader) {
             this.maybeClose()
             return
         }
-        if (this.deps.modelDownloader.isDownloading) {
+        if (downloader.isDownloading) {
             return
         }
         try {
             const startAt = performance.now()
-            await this.deps.modelDownloader.download(progress => {
+            await downloader.download(progress => {
                 this.deps
                     .sendRuntimeMessage({
                         type: 'model-download-progress',
+                        modelType,
                         loaded: progress.loaded,
                         total: progress.total,
                         file: progress.file,
@@ -429,37 +450,83 @@ export class OffscreenHandler {
                     totalMs,
                 },
             })
-            await this.deps.sendRuntimeMessage({ type: 'model-download-complete' })
+            await this.deps.sendRuntimeMessage({ type: 'model-download-complete', modelType })
         } catch (e) {
             const errorMsg = e instanceof Error ? e.message : String(e)
-            const isAborted = errorMsg === 'Model download aborted' || (this.deps.modelDownloader?.aborted ?? false)
+            const isAborted =
+                errorMsg === 'Model download aborted' ||
+                errorMsg === 'Summary model download aborted' ||
+                (downloader.aborted ?? false)
             if (isAborted) {
-                console.log('Model download aborted by user.')
-                await this.deps.modelDownloader?.clearCache().catch(() => {})
-                await this.deps.sendRuntimeMessage({ type: 'model-download-error', error: 'Model download aborted' })
+                console.log(`${modelType} model download aborted by user.`)
+                await downloader.clearCache().catch(() => {})
+                await this.deps.sendRuntimeMessage({
+                    type: 'model-download-error',
+                    modelType,
+                    error: 'Model download aborted',
+                })
                 return
             }
-            console.error('Model download failed in offscreen handler:', e)
+            console.error(`${modelType} model download failed in offscreen handler:`, e)
             this.deps.sendException(e, { exceptionSource: 'offscreen.handleStartModelDownload' })
-            await this.deps.sendRuntimeMessage({ type: 'model-download-error', error: errorMsg })
+            await this.deps.sendRuntimeMessage({ type: 'model-download-error', modelType, error: errorMsg })
         } finally {
             this.maybeClose()
         }
     }
 
-    private async handleCancelModelDownload(): Promise<void> {
-        this.deps.modelDownloader?.abort()
-        await this.deps.modelDownloader?.clearCache().catch(() => {})
+    private async handleCancelModelDownload(modelType: ModelType): Promise<void> {
+        const downloader = this.getModelDownloader(modelType)
+        downloader?.abort()
+        await downloader?.clearCache().catch(() => {})
         this.maybeClose()
     }
 
-    private async handleQueryModelDownloadStatus(): Promise<void> {
-        const isDownloading = this.deps.modelDownloader?.isDownloading ?? false
-        const progress = this.deps.modelDownloader?.getProgress() ?? null
+    private async handleQueryModelDownloadStatus(modelType: ModelType): Promise<void> {
+        const downloader = this.getModelDownloader(modelType)
+        const isDownloading = downloader?.isDownloading ?? false
+        const progress = downloader?.getProgress() ?? null
         await this.deps.sendRuntimeMessage({
             type: 'model-download-status-response',
+            modelType,
             isDownloading,
             progress,
         })
+    }
+
+    private async handleStartSummary(path: string): Promise<void> {
+        if (!this.deps.summarySession) {
+            this.maybeClose()
+            return
+        }
+        if (this.deps.summarySession.isSummarizing(path)) {
+            return
+        }
+        try {
+            await this.deps.summarySession.summarize(path)
+        } catch (e) {
+            console.error('Summary failed in offscreen handler:', e)
+            this.deps.sendException(e, {
+                exceptionSource: 'offscreen.handleStartSummary',
+                additionalMetadata: { path },
+            })
+        } finally {
+            this.maybeClose()
+        }
+    }
+
+    private async handleQuerySummaryStatus(path: string): Promise<void> {
+        const isSummarizing = this.deps.summarySession?.isSummarizing(path) ?? false
+        await this.deps.sendRuntimeMessage({
+            type: 'summary-status-response',
+            path,
+            isSummarizing,
+        })
+    }
+
+    private async handleCancelTasksForPath(path: string): Promise<void> {
+        this.deps.transcriptionSession?.cancel(path)
+        this.deps.summarySession?.cancel(path)
+        this.maybeClose()
     }
 }

@@ -27,6 +27,8 @@ export interface RecordingMetadata {
     thumbnailFileName?: string
     /** Whether transcription is available */
     hasTranscription?: boolean
+    /** Whether summary is available */
+    hasSummary?: boolean
 }
 
 /**

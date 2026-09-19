@@ -2,10 +2,11 @@ import { render } from 'vitest-browser-lit'
 import { html } from 'lit'
 import { describe, test, expect, vi } from 'vitest'
 import { shadowQuery, shadowQueryAll, elementUpdated } from './test-helpers'
-import './test-setup'
+import { simulateChromeMessage } from './test-setup'
 import '../../src/element/settings'
 import { Settings } from '../../src/element/settings'
 import { Configuration } from '../../src/configuration'
+import { DEFAULT_SUMMARY_PROMPT } from '../../src/summary/prompt'
 
 // Mock mediabunny to avoid actual codec detection
 vi.mock('mediabunny', () => {
@@ -74,16 +75,20 @@ vi.mock('../../src/theme', () => ({
 }))
 
 const mockCheckWebGPUSupport = vi.fn().mockResolvedValue({ supported: true })
-vi.mock('../../src/transcription/webgpu', () => ({
+vi.mock('../../src/ml/webgpu', () => ({
     checkWebGPUSupport: () => mockCheckWebGPUSupport(),
 }))
 
-const mockHasCache = vi.fn().mockResolvedValue(true)
+const mockHasCache = vi.fn().mockImplementation((..._args: unknown[]) => Promise.resolve(true))
 const mockClear = vi.fn().mockResolvedValue(undefined)
-vi.mock('../../src/transcription/opfs_model_cache', () => {
+vi.mock('../../src/ml/opfs_model_cache', () => {
     class MockOPFSModelCache {
-        hasCache = () => mockHasCache()
-        clear = () => mockClear()
+        dirName: string
+        constructor(dirName: string) {
+            this.dirName = dirName
+        }
+        hasCache = (...args: unknown[]) => mockHasCache(this.dirName, ...args)
+        clear = () => mockClear(this.dirName)
     }
     return {
         OPFSModelCache: MockOPFSModelCache,
@@ -301,13 +306,13 @@ describe('extension-settings', () => {
         )
 
         // 2. Downloading state
-        el.isModelDownloading = true
+        el.isTranscriptionModelDownloading = true
         el.requestUpdate()
         await elementUpdated(el)
         expect(hintEl.textContent?.trim()).toBe('Disabling will cancel the model data download.')
 
         // 3. Enabled & cached state
-        el.isModelDownloading = false
+        el.isTranscriptionModelDownloading = false
         const config = Settings.getConfiguration()
         config.transcription.enabled = true
         Settings.setConfiguration(config)
@@ -344,7 +349,10 @@ describe('extension-settings', () => {
         )
 
         // Should not have sent start-model-download message
-        expect(chrome.runtime.sendMessage).not.toHaveBeenCalledWith({ type: 'start-model-download' })
+        expect(chrome.runtime.sendMessage).not.toHaveBeenCalledWith({
+            type: 'start-model-download',
+            modelType: 'transcription',
+        })
     })
 
     test('disables transcription switch and shows unsupported message when shader-f16 is not supported on toggle', async () => {
@@ -373,7 +381,10 @@ describe('extension-settings', () => {
         )
 
         // Should not have sent start-model-download message
-        expect(chrome.runtime.sendMessage).not.toHaveBeenCalledWith({ type: 'start-model-download' })
+        expect(chrome.runtime.sendMessage).not.toHaveBeenCalledWith({
+            type: 'start-model-download',
+            modelType: 'transcription',
+        })
     })
 
     test('starts model download when WebGPU and shader-f16 are supported on toggle', async () => {
@@ -393,7 +404,10 @@ describe('extension-settings', () => {
 
         // Should have sent start-model-download message
         await vi.waitFor(() => {
-            expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({ type: 'start-model-download' })
+            expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({
+                type: 'start-model-download',
+                modelType: 'transcription',
+            })
         })
 
         // Switch should not be disabled after toggle operation completes
@@ -437,11 +451,64 @@ describe('extension-settings', () => {
         await elementUpdated(el)
 
         // Stale handler must have been invalidated: start-model-download should not be called
-        expect(chrome.runtime.sendMessage).not.toHaveBeenCalledWith({ type: 'start-model-download' })
+        expect(chrome.runtime.sendMessage).not.toHaveBeenCalledWith({
+            type: 'start-model-download',
+            modelType: 'transcription',
+        })
 
         // Config should remain disabled
         const config = Settings.getConfiguration()
         expect(config.transcription.enabled).toBe(false)
+    })
+
+    test('invalidates stale summary ON handler when toggled OFF before cache check completes', async () => {
+        let resolveSummaryCacheCheck!: (value: boolean) => void
+        mockHasCache.mockImplementation(
+            (dirName?: unknown) =>
+                new Promise<boolean>(resolve => {
+                    if (dirName === 'summary-model-cache') {
+                        resolveSummaryCacheCheck = resolve
+                    } else {
+                        resolve(true)
+                    }
+                }),
+        )
+
+        const config = Settings.getConfiguration()
+        config.transcription.enabled = true
+        config.summary.enabled = false
+        Settings.setConfiguration(config)
+
+        const screen = render(html`<extension-settings></extension-settings>`)
+        const el = screen.container.querySelector('extension-settings')!
+        await elementUpdated(el)
+
+        const summarySwitch = shadowQuery(el, '#summary') as any
+        expect(summarySwitch).not.toBeNull()
+
+        // Toggle ON (hangs on hasCache() for summary-model-cache)
+        summarySwitch.selected = true
+        summarySwitch.dispatchEvent(new Event('input'))
+        await elementUpdated(el)
+
+        // User quickly toggles OFF before cache check resolves
+        summarySwitch.selected = false
+        summarySwitch.dispatchEvent(new Event('input'))
+        await elementUpdated(el)
+
+        // Now resolve the stale hasCache() call with false (which would normally trigger summary model download)
+        resolveSummaryCacheCheck(false)
+        await elementUpdated(el)
+
+        // Stale handler must have been invalidated: start-model-download should not be called
+        expect(chrome.runtime.sendMessage).not.toHaveBeenCalledWith({
+            type: 'start-model-download',
+            modelType: 'summary',
+        })
+
+        // Config should remain disabled
+        const updatedConfig = Settings.getConfiguration()
+        expect(updatedConfig.summary.enabled).toBe(false)
     })
 
     test('detects cache inconsistency and shows redownload warning when transcription is enabled but cache is missing', async () => {
@@ -478,7 +545,7 @@ describe('extension-settings', () => {
         await elementUpdated(el)
 
         await vi.waitFor(() => {
-            expect(el.hasCacheInconsistency).toBe(true)
+            expect(el.hasTranscriptionCacheInconsistency).toBe(true)
         })
 
         // Toggle OFF
@@ -488,7 +555,7 @@ describe('extension-settings', () => {
         await elementUpdated(el)
 
         await vi.waitFor(() => {
-            expect(el.hasCacheInconsistency).toBe(false)
+            expect(el.hasTranscriptionCacheInconsistency).toBe(false)
             expect(mockClear).toHaveBeenCalled()
         })
 
@@ -506,7 +573,7 @@ describe('extension-settings', () => {
         const el = screen.container.querySelector('extension-settings') as any
         await elementUpdated(el)
 
-        expect(el.hasCacheInconsistency).toBe(false)
+        expect(el.hasTranscriptionCacheInconsistency).toBe(false)
 
         // Cache disappears while tab was inactive
         mockHasCache.mockResolvedValue(false)
@@ -514,10 +581,10 @@ describe('extension-settings', () => {
         await el.setTabActive(true)
         await elementUpdated(el)
 
-        expect(el.hasCacheInconsistency).toBe(true)
+        expect(el.hasTranscriptionCacheInconsistency).toBe(true)
     })
 
-    test('does not set hasCacheInconsistency if transcription is toggled off while checkCacheConsistency is pending', async () => {
+    test('does not set hasTranscriptionCacheInconsistency if transcription is toggled off while checkTranscriptionCacheConsistency is pending', async () => {
         let resolveHasCache!: (val: boolean) => void
         mockHasCache.mockImplementation(
             () =>
@@ -534,8 +601,8 @@ describe('extension-settings', () => {
         const el = screen.container.querySelector('extension-settings') as any
         await elementUpdated(el)
 
-        // Start pending checkCacheConsistency
-        const checkPromise = el.checkCacheConsistency()
+        // Start pending checkTranscriptionCacheConsistency
+        const checkPromise = el.checkTranscriptionCacheConsistency()
 
         // User toggles transcription OFF while check is pending
         const transcriptionSwitch = shadowQuery(el, '#transcription') as any
@@ -548,7 +615,7 @@ describe('extension-settings', () => {
         await checkPromise
         await elementUpdated(el)
 
-        expect(el.hasCacheInconsistency).toBe(false)
+        expect(el.hasTranscriptionCacheInconsistency).toBe(false)
         const hintEl = shadowQuery(el, '.settings-hint')!
         expect(hintEl.classList.contains('error')).toBe(false)
     })
@@ -570,5 +637,317 @@ describe('extension-settings', () => {
         })
 
         history.replaceState(null, '', window.location.pathname)
+    })
+
+    test('scrolls to summary switch when hash is #summary', async () => {
+        history.replaceState(null, '', '?tab=settings#summary')
+        const config = Settings.getConfiguration()
+        config.transcription.enabled = true
+        Settings.setConfiguration(config)
+
+        const screen = render(html`<extension-settings></extension-settings>`)
+        const el = screen.container.querySelector('extension-settings')!
+        await elementUpdated(el)
+
+        const switchEl = shadowQuery(el, '#summary')!
+        const scrollSpy = vi.spyOn(switchEl, 'scrollIntoView').mockImplementation(() => {})
+
+        await (el as any).checkAnchorNavigation()
+
+        await vi.waitFor(() => {
+            expect(scrollSpy).toHaveBeenCalledWith({ behavior: 'smooth', block: 'center' })
+        })
+
+        history.replaceState(null, '', window.location.pathname)
+    })
+
+    test('detects summary cache inconsistency and shows warning when summary is enabled but cache is missing', async () => {
+        mockHasCache.mockImplementation((dirName?: unknown) => Promise.resolve(dirName !== 'summary-model-cache'))
+        const config = Settings.getConfiguration()
+        config.transcription.enabled = true
+        config.summary.enabled = true
+        Settings.setConfiguration(config)
+
+        const screen = render(html`<extension-settings></extension-settings>`)
+        const el = screen.container.querySelector('extension-settings') as any
+        await elementUpdated(el)
+
+        await vi.waitFor(() => {
+            expect(el.hasSummaryCacheInconsistency).toBe(true)
+        })
+
+        const summarySwitch = shadowQuery(el, '#summary') as any
+        expect(summarySwitch).not.toBeNull()
+
+        const hintEls = shadowQueryAll(el, '.settings-hint')
+        const summaryHintEl = hintEls[hintEls.length - 1]
+        expect(summaryHintEl.classList.contains('error')).toBe(true)
+        expect(summaryHintEl.textContent?.trim()).toBe(
+            'Summary model data is missing or corrupted. Please toggle summary off and on again to redownload the model.',
+        )
+    })
+
+    test('clears summary cache inconsistency warning when user toggles summary off', async () => {
+        mockHasCache.mockImplementation((dirName?: unknown) => Promise.resolve(dirName !== 'summary-model-cache'))
+        const config = Settings.getConfiguration()
+        config.transcription.enabled = true
+        config.summary.enabled = true
+        Settings.setConfiguration(config)
+
+        const screen = render(html`<extension-settings></extension-settings>`)
+        const el = screen.container.querySelector('extension-settings') as any
+        await elementUpdated(el)
+
+        await vi.waitFor(() => {
+            expect(el.hasSummaryCacheInconsistency).toBe(true)
+        })
+
+        // Toggle summary OFF
+        const summarySwitch = shadowQuery(el, '#summary') as any
+        summarySwitch.selected = false
+        summarySwitch.dispatchEvent(new Event('input'))
+        await elementUpdated(el)
+
+        await vi.waitFor(() => {
+            expect(el.hasSummaryCacheInconsistency).toBe(false)
+            expect(mockClear).toHaveBeenCalled()
+        })
+    })
+
+    test('re-checks summary cache consistency on setTabActive(true)', async () => {
+        mockHasCache.mockResolvedValue(true)
+        const config = Settings.getConfiguration()
+        config.transcription.enabled = true
+        config.summary.enabled = true
+        Settings.setConfiguration(config)
+
+        const screen = render(html`<extension-settings></extension-settings>`)
+        const el = screen.container.querySelector('extension-settings') as any
+        await elementUpdated(el)
+
+        expect(el.hasSummaryCacheInconsistency).toBe(false)
+
+        // Cache disappears while tab was inactive
+        mockHasCache.mockImplementation((dirName?: unknown) => Promise.resolve(dirName !== 'summary-model-cache'))
+
+        await el.setTabActive(true)
+        await elementUpdated(el)
+
+        expect(el.hasSummaryCacheInconsistency).toBe(true)
+    })
+
+    test('disables summary switch and prompt when transcription has cache inconsistency', async () => {
+        mockHasCache.mockResolvedValue(true)
+        const config = Settings.getConfiguration()
+        config.transcription.enabled = true
+        config.summary.enabled = true
+        Settings.setConfiguration(config)
+
+        const screen = render(html`<extension-settings></extension-settings>`)
+        const el = screen.container.querySelector('extension-settings') as any
+        await elementUpdated(el)
+
+        // Simulate transcription cache inconsistency
+        el.hasTranscriptionCacheInconsistency = true
+        await elementUpdated(el)
+
+        const summarySwitch = shadowQuery(el, '#summary') as any
+        expect(summarySwitch).not.toBeNull()
+        expect(summarySwitch.disabled).toBe(true)
+
+        const promptField = shadowQuery(el, '#summary-prompt') as any
+        expect(promptField).not.toBeNull()
+        expect(promptField.disabled).toBe(true)
+    })
+
+    test('renders summary prompt field with default value and updates configuration on change', async () => {
+        mockHasCache.mockResolvedValue(true)
+        const config = Settings.getConfiguration()
+        config.transcription.enabled = true
+        config.summary.enabled = true
+        config.summary.prompt = DEFAULT_SUMMARY_PROMPT
+        Settings.setConfiguration(config)
+
+        const screen = render(html`<extension-settings></extension-settings>`)
+        const el = screen.container.querySelector('extension-settings') as any
+        await elementUpdated(el)
+
+        const promptField = shadowQuery(el, '#summary-prompt') as any
+        expect(promptField).not.toBeNull()
+        expect(promptField.value).toBe(DEFAULT_SUMMARY_PROMPT)
+        expect(promptField.disabled).toBe(false)
+
+        // Change prompt
+        const customPrompt = 'Custom summary instruction'
+        promptField.value = customPrompt
+        promptField.dispatchEvent(new Event('change'))
+        await elementUpdated(el)
+
+        const updatedConfig = Settings.getConfiguration()
+        expect(updatedConfig.summary.prompt).toBe(customPrompt)
+    })
+
+    test('renders model names as plain text under transcription and summary switches', async () => {
+        const config = Settings.getConfiguration()
+        config.transcription.enabled = true
+        config.summary.enabled = true
+        Settings.setConfiguration(config)
+
+        const screen = render(html`<extension-settings></extension-settings>`)
+        const el = screen.container.querySelector('extension-settings') as any
+        await elementUpdated(el)
+
+        const modelInfos = shadowQueryAll(el, '.model-info')
+        expect(modelInfos.length).toBeGreaterThanOrEqual(2)
+        const texts = modelInfos.map(m => m.textContent?.trim())
+        expect(texts).toContain('Model: Whisper Large v3 Turbo')
+        expect(texts).toContain('Model: Gemma 4 E2B')
+
+        // Ensure switches do not contain model names inside label
+        const switchLabels = shadowQueryAll(el, '.switch-label')
+        for (const label of switchLabels) {
+            expect(label.textContent).not.toContain('Whisper Large v3 Turbo')
+            expect(label.textContent).not.toContain('Gemma 4 E2B')
+        }
+    })
+
+    test('renders summary prompt only when summary is enabled and not downloading', async () => {
+        mockHasCache.mockResolvedValue(true)
+        const config = Settings.getConfiguration()
+        config.transcription.enabled = true
+        config.summary.enabled = false
+        Settings.setConfiguration(config)
+
+        const screen = render(html`<extension-settings></extension-settings>`)
+        const el = screen.container.querySelector('extension-settings') as any
+        await elementUpdated(el)
+
+        // When summary is disabled, summary-prompt should not exist in DOM
+        expect(shadowQuery(el, '#summary-prompt')).toBeNull()
+
+        // Enable summary
+        el.config = {
+            ...el.config,
+            summary: { ...el.config.summary, enabled: true },
+        }
+        await elementUpdated(el)
+
+        // When summary is enabled, summary-prompt should exist
+        expect(shadowQuery(el, '#summary-prompt')).not.toBeNull()
+
+        // When summary model is downloading, summary-prompt should not exist
+        el.isSummaryModelDownloading = true
+        await elementUpdated(el)
+        expect(shadowQuery(el, '#summary-prompt')).toBeNull()
+    })
+
+    test('ignores summary-model-download-complete and clears cache when user is cancelling summary download', async () => {
+        const config = Settings.getConfiguration()
+        config.summary.enabled = false
+        Settings.setConfiguration(config)
+
+        const screen = render(html`<extension-settings></extension-settings>`)
+        const el = screen.container.querySelector('extension-settings') as any
+        await elementUpdated(el)
+
+        el.isSummaryModelDownloading = true
+        el.summaryDownloadProgress = { loaded: 50, total: 100, file: 'model.onnx' }
+        el.isUserCancellingSummaryDownload = true
+        el.hasSummaryCacheInconsistency = true
+
+        simulateChromeMessage({ type: 'model-download-complete', modelType: 'summary' })
+        await elementUpdated(el)
+
+        expect(el.isSummaryModelDownloading).toBe(false)
+        expect(el.summaryDownloadProgress).toBeNull()
+        expect(el.hasSummaryCacheInconsistency).toBe(false)
+        expect(el.isUserCancellingSummaryDownload).toBe(false)
+        expect(el.config.summary.enabled).toBe(false)
+        expect(mockClear).toHaveBeenCalledWith('summary-model-cache')
+    })
+
+    test('enables summary and syncs configuration on summary-model-download-complete when not cancelling', async () => {
+        const config = Settings.getConfiguration()
+        config.summary.enabled = false
+        Settings.setConfiguration(config)
+
+        const screen = render(html`<extension-settings></extension-settings>`)
+        const el = screen.container.querySelector('extension-settings') as any
+        await elementUpdated(el)
+
+        el.isSummaryModelDownloading = true
+        el.summaryDownloadProgress = { loaded: 100, total: 100, file: 'model.onnx' }
+        el.isUserCancellingSummaryDownload = false
+        el.hasSummaryCacheInconsistency = true
+
+        simulateChromeMessage({ type: 'model-download-complete', modelType: 'summary' })
+        await elementUpdated(el)
+
+        expect(el.isSummaryModelDownloading).toBe(false)
+        expect(el.summaryDownloadProgress).toBeNull()
+        expect(el.hasSummaryCacheInconsistency).toBe(false)
+        expect(el.config.summary.enabled).toBe(true)
+        expect(Settings.getConfiguration().summary.enabled).toBe(true)
+        expect(chrome.runtime.sendMessage).toHaveBeenCalledWith(
+            expect.objectContaining({
+                type: 'save-config-sync',
+            }),
+        )
+        expect(mockClear).not.toHaveBeenCalled()
+    })
+
+    test('ignores model-download-complete and clears cache when user is cancelling transcription download', async () => {
+        const config = Settings.getConfiguration()
+        config.transcription.enabled = false
+        Settings.setConfiguration(config)
+
+        const screen = render(html`<extension-settings></extension-settings>`)
+        const el = screen.container.querySelector('extension-settings') as any
+        await elementUpdated(el)
+
+        el.isTranscriptionModelDownloading = true
+        el.transcriptionDownloadProgress = { loaded: 50, total: 100, file: 'model.onnx' }
+        el.isUserCancellingTranscriptionDownload = true
+        el.hasTranscriptionCacheInconsistency = true
+
+        simulateChromeMessage({ type: 'model-download-complete', modelType: 'transcription' })
+        await elementUpdated(el)
+
+        expect(el.isTranscriptionModelDownloading).toBe(false)
+        expect(el.transcriptionDownloadProgress).toBeNull()
+        expect(el.hasTranscriptionCacheInconsistency).toBe(false)
+        expect(el.isUserCancellingTranscriptionDownload).toBe(false)
+        expect(el.config.transcription.enabled).toBe(false)
+        expect(mockClear).toHaveBeenCalledWith('transcription-model-cache')
+    })
+
+    test('enables transcription and syncs configuration on model-download-complete when not cancelling', async () => {
+        const config = Settings.getConfiguration()
+        config.transcription.enabled = false
+        Settings.setConfiguration(config)
+
+        const screen = render(html`<extension-settings></extension-settings>`)
+        const el = screen.container.querySelector('extension-settings') as any
+        await elementUpdated(el)
+
+        el.isTranscriptionModelDownloading = true
+        el.transcriptionDownloadProgress = { loaded: 100, total: 100, file: 'model.onnx' }
+        el.isUserCancellingTranscriptionDownload = false
+        el.hasTranscriptionCacheInconsistency = true
+
+        simulateChromeMessage({ type: 'model-download-complete', modelType: 'transcription' })
+        await elementUpdated(el)
+
+        expect(el.isTranscriptionModelDownloading).toBe(false)
+        expect(el.transcriptionDownloadProgress).toBeNull()
+        expect(el.hasTranscriptionCacheInconsistency).toBe(false)
+        expect(el.config.transcription.enabled).toBe(true)
+        expect(Settings.getConfiguration().transcription.enabled).toBe(true)
+        expect(chrome.runtime.sendMessage).toHaveBeenCalledWith(
+            expect.objectContaining({
+                type: 'save-config-sync',
+            }),
+        )
+        expect(mockClear).not.toHaveBeenCalled()
     })
 })

@@ -13,7 +13,9 @@ import { Crop } from './crop'
 import { createRecordingSession } from './recorder'
 import { OffscreenHandler } from './offscreen_handler'
 import { TranscriptionSession } from './transcription/session'
-import { ModelDownloader } from './transcription/model_downloader'
+import { TranscriptionModelDownloader } from './transcription/model_downloader'
+import { SummarySession } from './summary/session'
+import { SummaryModelDownloader } from './summary/model_downloader'
 import { RecordingDB, parseRecordedAt } from './recording_db'
 import { errorToString } from './error'
 
@@ -83,7 +85,32 @@ const transcriptionSession = new TranscriptionSession({
     },
 })
 
-const modelDownloader = new ModelDownloader()
+const modelDownloader = new TranscriptionModelDownloader()
+
+const summarySession = new SummarySession({
+    getTranscription: async path => {
+        const recordedAt = parseRecordedAt(path)
+        if (recordedAt == null) throw new Error(`Invalid recording path: ${path}`)
+        const record = await recordingDB.get(recordedAt)
+        return record?.transcription ?? null
+    },
+    saveSummary: async (path, result) => {
+        const recordedAt = parseRecordedAt(path)
+        if (recordedAt == null) throw new Error(`Invalid recording path: ${path}`)
+        const record = await recordingDB.get(recordedAt)
+        if (!record) throw new Error(`Recording record not found for: ${path}`)
+        record.summary = result
+        await recordingDB.put(record)
+    },
+    broadcastMessage: msg => chrome.runtime.sendMessage(msg),
+    createWorker: () => {
+        const workerUrl = chrome.runtime.getURL('dist/summary_worker.js')
+        return new Worker(workerUrl, { type: 'module' })
+    },
+    getPrompt: () => Settings.getConfiguration().summary?.prompt,
+})
+
+const summaryModelDownloader = new SummaryModelDownloader()
 
 const handler = new OffscreenHandler({
     getRecordingInfo: tabSize => Settings.getRecordingInfo(tabSize),
@@ -102,7 +129,9 @@ const handler = new OffscreenHandler({
     recordingDB,
     getVideoFile,
     transcriptionSession,
-    modelDownloader,
+    transcriptionModelDownloader: modelDownloader,
+    summarySession,
+    summaryModelDownloader,
     closeDocument: () => {
         setTimeout(() => {
             window.close()

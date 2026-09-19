@@ -1,16 +1,19 @@
-import { REQUIRED_MODEL_FILES, getModelFileUrl, type RequiredModelFile } from './model_files'
+import { getModelFileUrl, type RequiredModelFile } from './model_files'
+import type { ModelCache } from './model_cache'
 
 /**
  * OPFS (Origin Private File System) custom cache backend for Transformers.js.
  * Stores downloaded ONNX models and configurations directly to private disk storage
  * so that downloads occur only once and do not cause JavaScript heap memory bloat.
  */
-export class OPFSModelCache {
+export class OPFSModelCache implements ModelCache {
     private readonly dirName: string
+    private readonly requiredFiles: readonly RequiredModelFile[]
     private dirHandle: FileSystemDirectoryHandle | null = null
 
-    constructor(dirName = 'transcription-model-cache') {
+    constructor(dirName: string, requiredFiles: readonly RequiredModelFile[]) {
         this.dirName = dirName
+        this.requiredFiles = requiredFiles
     }
 
     private async getDirectory(): Promise<FileSystemDirectoryHandle | null> {
@@ -151,7 +154,7 @@ export class OPFSModelCache {
     /**
      * Checks if all required model artifacts exist in the cache with their expected sizes.
      */
-    async hasCache(requiredFiles: readonly RequiredModelFile[] = REQUIRED_MODEL_FILES): Promise<boolean> {
+    async hasCache(requiredFiles: readonly RequiredModelFile[] = this.requiredFiles): Promise<boolean> {
         if (requiredFiles.length === 0) return false
         if (typeof navigator === 'undefined' || !navigator.storage?.getDirectory) return false
         try {
@@ -165,6 +168,53 @@ export class OPFSModelCache {
                     const fileHandle = await dir.getFileHandle(fileName)
                     const fileData = await fileHandle.getFile()
                     if (fileData.size !== file.size) {
+                        console.warn(
+                            `invalid file size: ${file.repo}/${file.name}, expected: ${file.size}, actual: ${fileData.size}`,
+                        )
+                        return false
+                    }
+                } catch {
+                    return false
+                }
+            }
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    /**
+     * Calculates the SHA-256 hash of a file as a lowercase hex string.
+     */
+    async calculateFileHash(file: File): Promise<string> {
+        const buffer = await file.arrayBuffer()
+        const digest = await crypto.subtle.digest('SHA-256', buffer)
+        const hashArray = Array.from(new Uint8Array(digest))
+        return hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
+    }
+
+    /**
+     * Checks if all required model artifacts exist in the cache with their expected SHA-256 hashes.
+     */
+    async verifyCache(requiredFiles: readonly RequiredModelFile[] = this.requiredFiles): Promise<boolean> {
+        if (requiredFiles.length === 0) return false
+        if (typeof navigator === 'undefined' || !navigator.storage?.getDirectory) return false
+        if (typeof crypto === 'undefined' || !crypto.subtle?.digest) return false
+        try {
+            const root = await navigator.storage.getDirectory()
+            const dir = await root.getDirectoryHandle(this.dirName)
+
+            for (const file of requiredFiles) {
+                const url = getModelFileUrl(file)
+                const fileName = await this.getCacheFileName(url)
+                try {
+                    const fileHandle = await dir.getFileHandle(fileName)
+                    const fileData = await fileHandle.getFile()
+                    const hash = await this.calculateFileHash(fileData)
+                    if (hash !== file.sha256) {
+                        console.warn(
+                            `invalid sha256 hash: ${file.repo}/${file.name}, expected: ${file.sha256}, actual: ${hash}`,
+                        )
                         return false
                     }
                 } catch {

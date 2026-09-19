@@ -715,5 +715,92 @@
     },
     "playerNoSpeechDetected": {
         "message": "発話が検出されませんでした。"
+    },
+    "settingsSummary": {
+        "message": "文字起こしの要約"
+    },
+    "settingsSummaryTitle": {
+        "message": "文字起こしの要約機能を有効化 (約$SIZE$のモデルダウンロードが必要)",
+        "placeholders": {
+            "size": {
+                "content": "$1",
+                "example": "4.9 GB"
+            }
+        }
+    },
+    "settingsSummaryEnableHint": {
+        "message": "有効にするとローカル環境で完結する要約機能が利用できます。\n約$SIZE$のモデルデータがダウンロードされるため通信環境にご注意ください。",
+        "placeholders": {
+            "size": {
+                "content": "$1",
+                "example": "4.9 GB"
+            }
+        }
+    },
+    "settingsSummaryDownloadingHint": {
+        "message": "無効にするとモデルデータのダウンロードを中止します。"
+    },
+    "settingsSummaryDisableWarning": {
+        "message": "無効にするとキャッシュ済みのモデルデータ（約$SIZE$）を削除します。",
+        "placeholders": {
+            "size": {
+                "content": "$1",
+                "example": "4.9 GB"
+            }
+        }
+    },
+    "settingsUsedModel": {
+        "message": "利用モデル: $MODEL$",
+        "placeholders": {
+            "model": {
+                "content": "$1",
+                "example": "Whisper Large v3 Turbo"
+            }
+        }
+    },
+    "settingsSummaryModelMissingWarning": {
+        "message": "要約モデルデータが見つからないか破損しています。要約を一度オフにしてから再度オンにして、モデルを再ダウンロードしてください。"
+    },
+    "settingsSummaryDownloadPending": {
+        "message": "ダウンロードを準備中..."
+    },
+    "settingsSummaryPrompt": {
+        "message": "要約指示プロンプト"
+    },
+    "playerSummary": {
+        "message": "要約"
+    },
+    "playerSummaryTitle": {
+        "message": "文字起こしの要約"
+    },
+    "playerStartSummary": {
+        "message": "要約を開始"
+    },
+    "playerSummaryLoadingModel": {
+        "message": "モデル読み込み中..."
+    },
+    "playerSummaryGenerating": {
+        "message": "要約を生成中..."
+    },
+    "playerSummaryError": {
+        "message": "要約の生成に失敗しました"
+    },
+    "playerSummaryCopy": {
+        "message": "コピー"
+    },
+    "playerSummaryCopied": {
+        "message": "コピーしました"
+    },
+    "playerSummaryRegenerate": {
+        "message": "再要約"
+    },
+    "playerSummaryModelNotReady": {
+        "message": "要約モデルがダウンロードされていません。設定画面から要約機能を有効にしてください。"
+    },
+    "playerSummaryModelRedownloadRequired": {
+        "message": "要約モデルが見つからないか破損しています。設定画面からモデルを再ダウンロードしてください。"
+    },
+    "playerSummaryNoTranscription": {
+        "message": "文字起こしデータがありません。先に文字起こしを実行してください。"
     }
 }

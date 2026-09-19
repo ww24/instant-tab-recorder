@@ -10,6 +10,7 @@ import {
 } from 'mediabunny'
 import type { OutputFormat, Quality } from 'mediabunny'
 import { getDefaultTranscriptionLanguage } from './transcription/languages'
+import { DEFAULT_SUMMARY_PROMPT } from './summary/prompt'
 
 export interface Resolution {
     width: number
@@ -269,7 +270,7 @@ export function isAudioOnly(mode: VideoRecordingMode): boolean {
 }
 
 // Configuration type for sync storage (excludes device-specific settings)
-export type SyncConfiguration = Omit<Configuration, 'microphone' | 'cropping' | 'transcription'>
+export type SyncConfiguration = Omit<Configuration, 'microphone' | 'cropping' | 'transcription' | 'summary'>
 
 /**
  * Resolve the container format for separated audio files.
@@ -293,6 +294,11 @@ export interface Transcription {
     language: string
 }
 
+export interface SummaryConfig {
+    enabled: boolean
+    prompt: string
+}
+
 export type RecordingTimerReport = { enabled: boolean; durationMinutes?: number; skipStopConfirmation?: boolean }
 
 export type ConfigurationReport = Pick<
@@ -306,7 +312,9 @@ export type ConfigurationReport = Pick<
     | 'uiTheme'
 > & { videoFormat: VideoFormatReport } & { microphone: Omit<Microphone, 'deviceId'> } & {
     cropping: Pick<CroppingConfig, 'enabled'> & { region: Pick<CropRegion, 'width' | 'height'> }
-} & { recordingTimer: RecordingTimerReport } & { transcription: Transcription }
+} & { recordingTimer: RecordingTimerReport } & { transcription: Transcription } & {
+    summary: Pick<SummaryConfig, 'enabled'>
+}
 
 export class Configuration {
     public static readonly key = 'settings'
@@ -326,6 +334,7 @@ export class Configuration {
     uiTheme: UITheme
     hasAgreedTerms: boolean
     transcription: Transcription
+    summary: SummaryConfig
     constructor() {
         this.windowSize = {
             width: 1920,
@@ -383,14 +392,18 @@ export class Configuration {
             enabled: false,
             language: getDefaultTranscriptionLanguage(),
         }
+        this.summary = {
+            enabled: false,
+            prompt: DEFAULT_SUMMARY_PROMPT,
+        }
     }
     static restoreDefault({ userId, hasAgreedTerms }: Configuration): Configuration {
         const config = new Configuration()
         return { ...config, userId, hasAgreedTerms }
     }
     static filterForSync(config: Configuration): SyncConfiguration {
-        // Exclude microphone and cropping from sync as it depends on device-specific information
-        const { microphone: _m, cropping: _c, transcription: _t, ...rest } = config
+        // Exclude microphone, cropping, transcription, and summary from sync as it depends on device-specific information
+        const { microphone: _m, cropping: _c, transcription: _t, summary: _s, ...rest } = config
         return { ...rest }
     }
     static filterForReport(config: Configuration): ConfigurationReport {
@@ -419,6 +432,7 @@ export class Configuration {
             audioSeparation,
             uiTheme,
             transcription,
+            summary,
         } = config
         return {
             windowSize,
@@ -436,6 +450,7 @@ export class Configuration {
             recordingTimer,
             uiTheme,
             transcription: { ...transcription },
+            summary: { enabled: summary.enabled },
         }
     }
     static screenRecordingSize(screenRecordingSize: ScreenRecordingSize, base: Resolution): Resolution {
@@ -487,6 +502,12 @@ export class Configuration {
         // Migrate: existing users without uiTheme get 'classic'
         if (stored != null && !('uiTheme' in stored)) {
             config.uiTheme = 'classic'
+            migrated = true
+        }
+
+        // Migrate: ensure summary.prompt has a default value
+        if (config.summary && typeof config.summary.prompt !== 'string') {
+            config.summary.prompt = DEFAULT_SUMMARY_PROMPT
             migrated = true
         }
 
