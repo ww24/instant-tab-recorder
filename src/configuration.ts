@@ -145,7 +145,19 @@ export class VideoFormat {
         if (videoBitratePreset !== 'custom') {
             report.videoBitrate = undefined
         }
-        return report
+        const { container, videoBitrate, videoCodec, frameRate, audioBitrate, audioCodec, audioSampleRate } = report
+        return {
+            recordingMode,
+            container,
+            videoBitrate,
+            videoBitratePreset,
+            videoCodec,
+            frameRate,
+            audioBitrate,
+            audioBitratePreset,
+            audioCodec,
+            audioSampleRate,
+        }
     }
 }
 
