@@ -117,8 +117,7 @@ export class VideoFormat {
 
     static toReport(vf: VideoFormat, micEnabled: boolean = false): VideoFormatReport {
         const report: VideoFormatReport = { ...vf }
-        const { recordingMode, audioBitratePreset, videoBitratePreset } = vf
-        switch (recordingMode) {
+        switch (vf.recordingMode) {
             case 'audio-only':
                 report.videoCodec = undefined
                 report.videoBitratePreset = undefined
@@ -134,13 +133,24 @@ export class VideoFormat {
                 }
                 break
         }
-        if (audioBitratePreset !== 'custom') {
+        if (vf.audioBitratePreset !== 'custom') {
             report.audioBitrate = undefined
         }
-        if (videoBitratePreset !== 'custom') {
+        if (vf.videoBitratePreset !== 'custom') {
             report.videoBitrate = undefined
         }
-        const { container, videoBitrate, videoCodec, frameRate, audioBitrate, audioCodec, audioSampleRate } = report
+        const {
+            recordingMode,
+            container,
+            videoBitrate,
+            videoBitratePreset,
+            videoCodec,
+            frameRate,
+            audioBitrate,
+            audioBitratePreset,
+            audioCodec,
+            audioSampleRate,
+        } = report
         return {
             recordingMode,
             container,

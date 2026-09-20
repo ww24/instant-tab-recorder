@@ -1,12 +1,17 @@
 import { render } from 'vitest-browser-lit'
 import { html } from 'lit'
-import { describe, test, expect, vi } from 'vitest'
+import { describe, test, expect, vi, beforeEach } from 'vitest'
 import { shadowQuery, shadowQueryAll, elementUpdated } from './test-helpers'
 import { simulateChromeMessage } from './test-setup'
 import '../../src/element/settings'
-import { Settings } from '../../src/element/settings'
+import { Settings, detectSupportedVideoCodecs, detectSupportedAudioCodecs } from '../../src/element/settings'
 import { Configuration } from '../../src/configuration'
 import { DEFAULT_SUMMARY_PROMPT } from '../../src/summary/prompt'
+
+const { mockCanEncodeVideo, mockCanEncodeAudio } = vi.hoisted(() => ({
+    mockCanEncodeVideo: vi.fn().mockResolvedValue(true),
+    mockCanEncodeAudio: vi.fn().mockResolvedValue(true),
+}))
 
 // Mock mediabunny to avoid actual codec detection
 vi.mock('mediabunny', () => {
@@ -51,8 +56,8 @@ vi.mock('mediabunny', () => {
         }
     }
     return {
-        canEncodeVideo: vi.fn().mockResolvedValue(true),
-        canEncodeAudio: vi.fn().mockResolvedValue(true),
+        canEncodeVideo: (...args: unknown[]) => mockCanEncodeVideo(...args),
+        canEncodeAudio: (...args: unknown[]) => mockCanEncodeAudio(...args),
         WebMOutputFormat: MockWebMOutputFormat,
         Mp4OutputFormat: MockMp4OutputFormat,
         OggOutputFormat: MockOggOutputFormat,
@@ -61,6 +66,9 @@ vi.mock('mediabunny', () => {
         QUALITY_HIGH: 'high',
         QUALITY_MEDIUM: 'medium',
         QUALITY_LOW: 'low',
+        Quality: class Quality {
+            constructor(public value: string) {}
+        },
     }
 })
 
@@ -96,6 +104,11 @@ vi.mock('../../src/ml/opfs_model_cache', () => {
 })
 
 describe('extension-settings', () => {
+    beforeEach(() => {
+        mockCanEncodeVideo.mockReset().mockResolvedValue(true)
+        mockCanEncodeAudio.mockReset().mockResolvedValue(true)
+    })
+
     test('renders Appearance heading with theme selector', async () => {
         const screen = render(html`<extension-settings></extension-settings>`)
         const el = screen.container.querySelector('extension-settings')!
@@ -830,6 +843,7 @@ describe('extension-settings', () => {
             ...el.config,
             summary: { ...el.config.summary, enabled: true },
         }
+        el.requestUpdate()
         await elementUpdated(el)
 
         // When summary is enabled, summary-prompt should exist
@@ -949,5 +963,343 @@ describe('extension-settings', () => {
             }),
         )
         expect(mockClear).not.toHaveBeenCalled()
+    })
+
+    describe('codec support detection and inactive state', () => {
+        test('detectSupportedVideoCodecs returns only codecs supported by browser', async () => {
+            mockCanEncodeVideo.mockImplementation(async (codec: string) => codec !== 'hevc' && codec !== 'av1')
+            const codecs = await detectSupportedVideoCodecs()
+            expect(codecs).toEqual(['vp8', 'vp9', 'avc'])
+        })
+
+        test('detectSupportedVideoCodecs handles errors gracefully', async () => {
+            mockCanEncodeVideo.mockImplementation(async (codec: string) => {
+                if (codec === 'av1') throw new Error('Unsupported codec')
+                return true
+            })
+            const codecs = await detectSupportedVideoCodecs()
+            expect(codecs).not.toContain('av1')
+            expect(codecs).toContain('vp8')
+        })
+
+        test('detectSupportedAudioCodecs returns only codecs supported by browser', async () => {
+            mockCanEncodeAudio.mockImplementation(async (codec: string) => codec !== 'flac')
+            const codecs = await detectSupportedAudioCodecs()
+            expect(codecs).toEqual(['opus', 'aac'])
+        })
+
+        test('detectSupportedAudioCodecs handles errors gracefully', async () => {
+            mockCanEncodeAudio.mockImplementation(async (codec: string) => {
+                if (codec === 'aac') throw new Error('Unsupported codec')
+                return true
+            })
+            const codecs = await detectSupportedAudioCodecs()
+            expect(codecs).not.toContain('aac')
+            expect(codecs).toContain('opus')
+        })
+
+        test('disables unsupported video codec options in UI', async () => {
+            // Browser supports vp8, vp9, avc, but not av1 or hevc
+            mockCanEncodeVideo.mockImplementation(async (codec: string) => codec !== 'av1' && codec !== 'hevc')
+
+            const config = Settings.getConfiguration()
+            config.videoFormat.container = 'webm'
+            config.videoFormat.videoCodec = 'vp9'
+            Settings.setConfiguration(config)
+
+            const screen = render(html`<extension-settings></extension-settings>`)
+            const el = screen.container.querySelector('extension-settings') as Settings
+            await el.ready
+            await elementUpdated(el)
+
+            const videoSelect = shadowQuery(el, 'md-filled-select.video-codec-settings')
+            expect(videoSelect).not.toBeNull()
+
+            const options = Array.from(videoSelect?.querySelectorAll('md-select-option') || [])
+            const vp8Opt = options.find(o => o.getAttribute('value') === 'vp8')
+            const vp9Opt = options.find(o => o.getAttribute('value') === 'vp9')
+            const av1Opt = options.find(o => o.getAttribute('value') === 'av1')
+            const avcOpt = options.find(o => o.getAttribute('value') === 'avc')
+            const hevcOpt = options.find(o => o.getAttribute('value') === 'hevc')
+
+            // vp8 and vp9 are supported by WebM and browser -> enabled
+            expect(vp8Opt?.hasAttribute('disabled')).toBe(false)
+            expect(vp9Opt?.hasAttribute('disabled')).toBe(false)
+
+            // av1 is supported by WebM container but NOT by browser -> disabled
+            expect(av1Opt?.hasAttribute('disabled')).toBe(true)
+
+            // avc and hevc are NOT supported by WebM container -> disabled
+            expect(avcOpt?.hasAttribute('disabled')).toBe(true)
+            expect(hevcOpt?.hasAttribute('disabled')).toBe(true)
+        })
+
+        test('disables unsupported audio codec options in UI', async () => {
+            // Browser supports opus and flac, but not aac
+            mockCanEncodeAudio.mockImplementation(async (codec: string) => codec !== 'aac')
+
+            const config = Settings.getConfiguration()
+            config.videoFormat.container = 'mp4'
+            config.videoFormat.audioCodec = 'opus'
+            Settings.setConfiguration(config)
+
+            const screen = render(html`<extension-settings></extension-settings>`)
+            const el = screen.container.querySelector('extension-settings') as Settings
+            await el.ready
+            await elementUpdated(el)
+
+            const audioSelect = shadowQuery(el, 'md-filled-select.audio-codec-settings')
+            expect(audioSelect).not.toBeNull()
+
+            const options = Array.from(audioSelect?.querySelectorAll('md-select-option') || [])
+            const opusOpt = options.find(o => o.getAttribute('value') === 'opus')
+            const aacOpt = options.find(o => o.getAttribute('value') === 'aac')
+            const flacOpt = options.find(o => o.getAttribute('value') === 'flac')
+
+            // opus is supported by MP4 and browser -> enabled
+            expect(opusOpt?.hasAttribute('disabled')).toBe(false)
+
+            // aac is supported by MP4 container but NOT by browser -> disabled
+            expect(aacOpt?.hasAttribute('disabled')).toBe(true)
+
+            // flac is NOT supported by MP4 container -> disabled
+            expect(flacOpt?.hasAttribute('disabled')).toBe(true)
+        })
+
+        test('automatically falls back to supported codec if stored codec is not supported', async () => {
+            // hevc is NOT supported by browser, only avc is supported
+            mockCanEncodeVideo.mockImplementation(async (codec: string) => codec === 'avc')
+
+            const config = Settings.getConfiguration()
+            config.videoFormat.container = 'mp4'
+            config.videoFormat.videoCodec = 'hevc'
+            Settings.setConfiguration(config)
+
+            const screen = render(html`<extension-settings></extension-settings>`)
+            const el = screen.container.querySelector('extension-settings') as any
+            await el.ready
+            await elementUpdated(el)
+
+            // Should have updated to avc
+            expect(el.config.videoFormat.videoCodec).toBe('avc')
+            expect(Settings.getConfiguration().videoFormat.videoCodec).toBe('avc')
+        })
+
+        test('automatically selects supported codec when container is switched', async () => {
+            // hevc is NOT supported, only avc and vp9 are supported
+            mockCanEncodeVideo.mockImplementation(async (codec: string) => codec === 'avc' || codec === 'vp9')
+
+            const config = Settings.getConfiguration()
+            config.videoFormat.container = 'webm'
+            config.videoFormat.videoCodec = 'vp9'
+            Settings.setConfiguration(config)
+
+            const screen = render(html`<extension-settings></extension-settings>`)
+            const el = screen.container.querySelector('extension-settings') as any
+            await el.ready
+            await elementUpdated(el)
+
+            const containerSelect = shadowQuery(el, '.container-select') as any
+            containerSelect.value = 'mp4'
+            containerSelect.dispatchEvent(new Event('input'))
+            await elementUpdated(el)
+
+            expect(el.config.videoFormat.container).toBe('mp4')
+            // MP4 container has ['avc', 'hevc'], and browser supports 'avc', so it should select 'avc'
+            expect(el.config.videoFormat.videoCodec).toBe('avc')
+        })
+
+        test('ignores attempt to select unsupported video or audio codec', async () => {
+            mockCanEncodeVideo.mockImplementation(async (codec: string) => codec === 'vp8')
+            mockCanEncodeAudio.mockImplementation(async (codec: string) => codec === 'opus')
+
+            const config = Settings.getConfiguration()
+            config.videoFormat.container = 'webm'
+            config.videoFormat.videoCodec = 'vp8'
+            config.videoFormat.audioCodec = 'opus'
+            Settings.setConfiguration(config)
+
+            const screen = render(html`<extension-settings></extension-settings>`)
+            const el = screen.container.querySelector('extension-settings') as any
+            await el.ready
+            await elementUpdated(el)
+
+            const videoSelect = shadowQuery(el, 'md-filled-select.video-codec-settings') as any
+            // Attempt to select av1 which is not supported by browser
+            videoSelect.value = 'av1'
+            videoSelect.dispatchEvent(new Event('input'))
+            await elementUpdated(el)
+
+            expect(el.config.videoFormat.videoCodec).toBe('vp8')
+
+            const audioSelect = shadowQuery(el, 'md-filled-select.audio-codec-settings') as any
+            // Attempt to select aac which is not supported
+            audioSelect.value = 'aac'
+            audioSelect.dispatchEvent(new Event('input'))
+            await elementUpdated(el)
+
+            expect(el.config.videoFormat.audioCodec).toBe('opus')
+        })
+
+        test('falls back to WebM/VP9/Opus when no browser-supported video codec exists for the selected container', async () => {
+            // Browser only supports VP8/VP9 (WebM codecs), none of MP4's codecs (avc/hevc)
+            mockCanEncodeVideo.mockImplementation(async (codec: string) => codec === 'vp8' || codec === 'vp9')
+            mockCanEncodeAudio.mockImplementation(async (codec: string) => codec === 'opus')
+
+            const config = Settings.getConfiguration()
+            config.videoFormat.container = 'mp4'
+            config.videoFormat.videoCodec = 'avc'
+            config.videoFormat.audioCodec = 'aac'
+            Settings.setConfiguration(config)
+
+            const screen = render(html`<extension-settings></extension-settings>`)
+            const el = screen.container.querySelector('extension-settings') as any
+            await el.ready
+            await elementUpdated(el)
+
+            // MP4 has no supported video codec -> must fall back to default WebM/VP9/Opus
+            expect(el.config.videoFormat.container).toBe('webm')
+            expect(el.config.videoFormat.videoCodec).toBe('vp9')
+            expect(el.config.videoFormat.audioCodec).toBe('opus')
+            expect(Settings.getConfiguration().videoFormat.container).toBe('webm')
+        })
+
+        test('falls back to WebM/VP9/Opus when no browser-supported audio codec exists for the selected container', async () => {
+            // Browser supports VP9 for video but no audio codec at all
+            mockCanEncodeVideo.mockImplementation(async (codec: string) => codec === 'vp9')
+            mockCanEncodeAudio.mockImplementation(async () => false)
+
+            const config = Settings.getConfiguration()
+            config.videoFormat.container = 'webm'
+            config.videoFormat.videoCodec = 'vp9'
+            config.videoFormat.audioCodec = 'opus'
+            Settings.setConfiguration(config)
+
+            const screen = render(html`<extension-settings></extension-settings>`)
+            const el = screen.container.querySelector('extension-settings') as any
+            await el.ready
+            await elementUpdated(el)
+
+            // WebM has no supported audio codec -> must fall back to WebM/VP9/Opus (default)
+            // Note: when detection returns empty audio list, we fall back to the safe default.
+            expect(el.config.videoFormat.container).toBe('webm')
+            expect(el.config.videoFormat.videoCodec).toBe('vp9')
+            expect(el.config.videoFormat.audioCodec).toBe('opus')
+        })
+
+        test('ensureValidCodecs still runs when audio detection returns empty (codecDetectionDone tracks completion)', async () => {
+            // Video: only avc supported; Audio: nothing supported
+            mockCanEncodeVideo.mockImplementation(async (codec: string) => codec === 'avc')
+            mockCanEncodeAudio.mockImplementation(async () => false)
+
+            const config = Settings.getConfiguration()
+            config.videoFormat.container = 'mp4'
+            config.videoFormat.videoCodec = 'hevc' // unsupported for browser
+            config.videoFormat.audioCodec = 'aac'
+            Settings.setConfiguration(config)
+
+            const screen = render(html`<extension-settings></extension-settings>`)
+            const el = screen.container.querySelector('extension-settings') as any
+            await el.ready
+            await elementUpdated(el)
+
+            // avc is supported for MP4 video, so video codec should be corrected.
+            // Audio detection returned empty -> container fallback to WebM/VP9/Opus applies.
+            // Fallback is triggered by empty audio for MP4 -> WebM.
+            expect(el.config.videoFormat.container).toBe('webm')
+            expect(el.config.videoFormat.videoCodec).toBe('vp9')
+            expect(el.config.videoFormat.audioCodec).toBe('opus')
+        })
+
+        test('validates and corrects unsupported codecs when applying synced configuration (sync())', async () => {
+            // Browser only supports 'avc' for video and 'opus' for audio on MP4 container
+            mockCanEncodeVideo.mockImplementation(async (codec: string) => codec === 'avc')
+            mockCanEncodeAudio.mockImplementation(async (codec: string) => codec === 'opus')
+
+            const config = Settings.getConfiguration()
+            config.videoFormat.container = 'mp4'
+            config.videoFormat.videoCodec = 'avc'
+            config.videoFormat.audioCodec = 'opus'
+            Settings.setConfiguration(config)
+
+            const screen = render(html`<extension-settings></extension-settings>`)
+            const el = screen.container.querySelector('extension-settings') as any
+            await el.ready
+            await elementUpdated(el)
+
+            // Mock fetch-config response to return unsupported codecs ('hevc' and 'aac')
+            const syncedConfig = new Configuration()
+            syncedConfig.videoFormat.container = 'mp4'
+            syncedConfig.videoFormat.videoCodec = 'hevc'
+            syncedConfig.videoFormat.audioCodec = 'aac'
+
+            vi.spyOn(chrome.runtime, 'sendMessage').mockImplementation(async (msg: any) => {
+                if (msg?.type === 'fetch-config') {
+                    return syncedConfig
+                }
+                return undefined
+            })
+
+            // Trigger sync via button click
+            const buttons = shadowQueryAll(el, 'md-filled-tonal-button')
+            const fetchBtn = buttons.find(b => b.textContent?.trim().includes('Fetch Synced')) as
+                | HTMLElement
+                | undefined
+            expect(fetchBtn).not.toBeUndefined()
+            fetchBtn?.click()
+
+            // Wait for sync processing and verify codecs are corrected
+            await vi.waitFor(() => {
+                expect(el.config.videoFormat.videoCodec).toBe('avc')
+                expect(el.config.videoFormat.audioCodec).toBe('opus')
+            })
+
+            expect(Settings.getConfiguration().videoFormat.videoCodec).toBe('avc')
+            expect(Settings.getConfiguration().videoFormat.audioCodec).toBe('opus')
+        })
+
+        test('validates and corrects unsupported codecs when restoring defaults (restore())', async () => {
+            // Default configuration uses 'vp9' for webm, but browser only supports 'vp8'
+            mockCanEncodeVideo.mockImplementation(async (codec: string) => codec === 'vp8')
+            mockCanEncodeAudio.mockImplementation(async (codec: string) => codec === 'opus')
+
+            const config = Settings.getConfiguration()
+            config.videoFormat.container = 'webm'
+            config.videoFormat.videoCodec = 'vp8'
+            config.videoFormat.audioCodec = 'opus'
+            Settings.setConfiguration(config)
+
+            const screen = render(html`<extension-settings></extension-settings>`)
+            const el = screen.container.querySelector('extension-settings') as any
+            await el.ready
+            await elementUpdated(el)
+
+            const sendMessageSpy = vi.spyOn(chrome.runtime, 'sendMessage')
+
+            // Trigger restore defaults via button click
+            const buttons = shadowQueryAll(el, 'md-filled-tonal-button')
+            const restoreBtn = buttons.find(b => b.textContent?.trim().includes('Restore Default')) as
+                | HTMLElement
+                | undefined
+            expect(restoreBtn).not.toBeUndefined()
+            restoreBtn?.click()
+
+            // Configuration.restoreDefault returns 'vp9', but browser only supports 'vp8', so it must fall back to 'vp8'
+            await vi.waitFor(() => {
+                expect(el.config.videoFormat.videoCodec).toBe('vp8')
+            })
+
+            expect(Settings.getConfiguration().videoFormat.videoCodec).toBe('vp8')
+            expect(sendMessageSpy).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    type: 'save-config-sync',
+                    data: expect.objectContaining({
+                        videoFormat: expect.objectContaining({
+                            videoCodec: 'vp8',
+                        }),
+                    }),
+                }),
+            )
+        })
     })
 })

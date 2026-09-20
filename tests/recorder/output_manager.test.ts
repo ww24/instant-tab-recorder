@@ -23,6 +23,9 @@ vi.mock('mediabunny', () => {
         QUALITY_HIGH: 'high',
         QUALITY_MEDIUM: 'medium',
         QUALITY_LOW: 'low',
+        Quality: class Quality {
+            constructor(public value: string) {}
+        },
     }
 })
 vi.mock('@mediabunny/flac-encoder', () => ({
