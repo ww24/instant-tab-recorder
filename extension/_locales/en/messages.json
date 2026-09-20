@@ -283,6 +283,10 @@
         "message": "audio bitrate",
         "description": "Label for audio bitrate preset select"
     },
+    "settingsBitrateVeryHigh": {
+        "message": "Very high",
+        "description": "Bitrate preset option"
+    },
     "settingsBitrateHigh": {
         "message": "High",
         "description": "Bitrate preset option"
@@ -293,6 +297,10 @@
     },
     "settingsBitrateLow": {
         "message": "Low",
+        "description": "Bitrate preset option"
+    },
+    "settingsBitrateVeryLow": {
+        "message": "Very low",
         "description": "Bitrate preset option"
     },
     "settingsBitrateCustom": {

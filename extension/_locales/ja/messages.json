@@ -215,6 +215,9 @@
     "settingsAudioBitrate": {
         "message": "音声ビットレート"
     },
+    "settingsBitrateVeryHigh": {
+        "message": "非常に高"
+    },
     "settingsBitrateHigh": {
         "message": "高"
     },
@@ -223,6 +226,9 @@
     },
     "settingsBitrateLow": {
         "message": "低"
+    },
+    "settingsBitrateVeryLow": {
+        "message": "非常に低"
     },
     "settingsBitrateCustom": {
         "message": "カスタム"

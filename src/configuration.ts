@@ -1,14 +1,5 @@
-import {
-    WebMOutputFormat,
-    Mp4OutputFormat,
-    OggOutputFormat,
-    AdtsOutputFormat,
-    FlacOutputFormat,
-    QUALITY_HIGH,
-    QUALITY_MEDIUM,
-    QUALITY_LOW,
-} from 'mediabunny'
-import type { OutputFormat, Quality } from 'mediabunny'
+import { WebMOutputFormat, Mp4OutputFormat, OggOutputFormat, AdtsOutputFormat, FlacOutputFormat } from 'mediabunny'
+import { OutputFormat, Quality } from 'mediabunny'
 import { getDefaultTranscriptionLanguage } from './transcription/languages'
 import { DEFAULT_SUMMARY_PROMPT } from './summary/prompt'
 
@@ -87,7 +78,7 @@ export function containerExtension(container: ContainerFormat): string {
     }
 }
 
-const bitratePresets = ['high', 'medium', 'low', 'custom'] as const
+const bitratePresets = ['very-high', 'high', 'medium', 'low', 'very-low', 'custom'] as const
 export type BitratePreset = (typeof bitratePresets)[number]
 export function isBitratePreset(v: unknown): v is BitratePreset {
     return bitratePresets.some(p => v === p)
@@ -95,12 +86,16 @@ export function isBitratePreset(v: unknown): v is BitratePreset {
 
 export function resolveBitrate(preset: BitratePreset, customValue: number): number | Quality {
     switch (preset) {
+        case 'very-high':
+            return new Quality('very-high')
         case 'high':
-            return QUALITY_HIGH
+            return new Quality('high')
         case 'medium':
-            return QUALITY_MEDIUM
+            return new Quality('medium')
         case 'low':
-            return QUALITY_LOW
+            return new Quality('low')
+        case 'very-low':
+            return new Quality('very-low')
         case 'custom':
             return customValue
     }

@@ -471,6 +471,9 @@ export class Settings extends LitElement {
                             .value=${live(this.config.videoFormat.audioBitratePreset)}
                             ?disabled=${live(!this.audioSettingsEnabled)}
                             @input=${this.updateProp('videoFormat', 'audioBitratePreset')}>
+                            <md-select-option value="very-high"
+                                ><div slot="headline">${t('settingsBitrateVeryHigh')}</div></md-select-option
+                            >
                             <md-select-option value="high"
                                 ><div slot="headline">${t('settingsBitrateHigh')}</div></md-select-option
                             >
@@ -479,6 +482,9 @@ export class Settings extends LitElement {
                             >
                             <md-select-option value="low"
                                 ><div slot="headline">${t('settingsBitrateLow')}</div></md-select-option
+                            >
+                            <md-select-option value="very-low"
+                                ><div slot="headline">${t('settingsBitrateVeryLow')}</div></md-select-option
                             >
                             <md-select-option value="custom"
                                 ><div slot="headline">${t('settingsBitrateCustom')}</div></md-select-option
@@ -529,6 +535,9 @@ export class Settings extends LitElement {
                             .value=${live(this.config.videoFormat.videoBitratePreset)}
                             ?disabled=${live(!hasVideo(this.config.videoFormat.recordingMode))}
                             @input=${this.updateProp('videoFormat', 'videoBitratePreset')}>
+                            <md-select-option value="very-high"
+                                ><div slot="headline">${t('settingsBitrateVeryHigh')}</div></md-select-option
+                            >
                             <md-select-option value="high"
                                 ><div slot="headline">${t('settingsBitrateHigh')}</div></md-select-option
                             >
@@ -537,6 +546,9 @@ export class Settings extends LitElement {
                             >
                             <md-select-option value="low"
                                 ><div slot="headline">${t('settingsBitrateLow')}</div></md-select-option
+                            >
+                            <md-select-option value="very-low"
+                                ><div slot="headline">${t('settingsBitrateVeryLow')}</div></md-select-option
                             >
                             <md-select-option value="custom"
                                 ><div slot="headline">${t('settingsBitrateCustom')}</div></md-select-option
