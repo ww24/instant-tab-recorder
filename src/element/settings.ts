@@ -51,6 +51,38 @@ import { checkWebGPUSupport, type WebGPUSupportReason } from '../ml/webgpu'
 import { SUMMARY_MODEL_NAME, REQUIRED_SUMMARY_MODEL_FILES } from '../summary/model_files'
 import { DEFAULT_SUMMARY_PROMPT } from '../summary/prompt'
 
+/**
+ * Detects which video codecs can be encoded by the browser using mediabunny.
+ */
+export async function detectSupportedVideoCodecs(): Promise<VideoCodecType[]> {
+    const results = await Promise.all(
+        ALL_VIDEO_CODECS.map(async codec => {
+            try {
+                return (await canEncodeVideo(codec)) ? codec : null
+            } catch {
+                return null
+            }
+        }),
+    )
+    return results.filter((c): c is VideoCodecType => c !== null)
+}
+
+/**
+ * Detects which audio codecs can be encoded by the browser using mediabunny.
+ */
+export async function detectSupportedAudioCodecs(): Promise<AudioCodecType[]> {
+    const results = await Promise.all(
+        ALL_AUDIO_CODECS.map(async codec => {
+            try {
+                return (await canEncodeAudio(codec)) ? codec : null
+            } catch {
+                return null
+            }
+        }),
+    )
+    return results.filter((c): c is AudioCodecType => c !== null)
+}
+
 @customElement('extension-settings')
 export class Settings extends LitElement {
     private static readonly storage = new WebLocalStorage()
@@ -226,8 +258,21 @@ export class Settings extends LitElement {
         `,
     ]
 
-    @property({ noAccessor: true })
-    private config: Configuration
+    private currentConfig!: Configuration
+
+    @property({ attribute: false })
+    public get config(): Configuration {
+        return this.currentConfig
+    }
+
+    public set config(newConfig: Configuration) {
+        const oldVal = this.currentConfig
+        this.currentConfig = newConfig
+        if (this.codecDetectionDone) {
+            this.ensureValidCodecs(this.currentConfig.videoFormat.container)
+        }
+        this.requestUpdate('config', oldVal)
+    }
 
     @property()
     private microphonePermissionGranted: boolean = false
@@ -287,6 +332,15 @@ export class Settings extends LitElement {
     @property()
     private timerEstimateText: string = ''
 
+    @property()
+    private supportedVideoCodecs: VideoCodecType[] = [...ALL_VIDEO_CODECS]
+
+    @property()
+    private supportedAudioCodecs: AudioCodecType[] = [...ALL_AUDIO_CODECS]
+
+    /** True once detectSupportedCodecs() has resolved (even if results are empty). */
+    private codecDetectionDone: boolean = false
+
     private timerEstimateIntervalId: ReturnType<typeof setInterval> | null = null
 
     public constructor() {
@@ -297,6 +351,11 @@ export class Settings extends LitElement {
         this.updateTimerEstimate()
     }
 
+    private readyResolve!: () => void
+    public readonly ready: Promise<void> = new Promise(resolve => {
+        this.readyResolve = resolve
+    })
+
     protected override async firstUpdated() {
         try {
             const isFLACSupported = await canEncodeAudio('flac')
@@ -306,10 +365,29 @@ export class Settings extends LitElement {
         } catch (error) {
             console.error('Failed to initialize FLAC encoding support.', error)
         }
+        await this.detectSupportedCodecs()
         await this.validateEncoding()
         await this.checkTranscriptionCacheConsistency()
         await this.checkSummaryCacheConsistency()
         this.checkAnchorNavigation()
+        await this.updateComplete
+        this.readyResolve()
+    }
+
+    private async detectSupportedCodecs(): Promise<void> {
+        const [videoCodecs, audioCodecs] = await Promise.all([
+            detectSupportedVideoCodecs(),
+            detectSupportedAudioCodecs(),
+        ])
+        this.supportedVideoCodecs = videoCodecs
+        this.supportedAudioCodecs = audioCodecs
+        this.codecDetectionDone = true
+
+        const changed = this.ensureValidCodecs(this.config.videoFormat.container)
+        if (changed) {
+            Settings.setConfiguration(this.config)
+            this.requestUpdate('config')
+        }
     }
 
     public override render() {
@@ -471,6 +549,9 @@ export class Settings extends LitElement {
                             .value=${live(this.config.videoFormat.audioBitratePreset)}
                             ?disabled=${live(!this.audioSettingsEnabled)}
                             @input=${this.updateProp('videoFormat', 'audioBitratePreset')}>
+                            <md-select-option value="very-high"
+                                ><div slot="headline">${t('settingsBitrateVeryHigh')}</div></md-select-option
+                            >
                             <md-select-option value="high"
                                 ><div slot="headline">${t('settingsBitrateHigh')}</div></md-select-option
                             >
@@ -479,6 +560,9 @@ export class Settings extends LitElement {
                             >
                             <md-select-option value="low"
                                 ><div slot="headline">${t('settingsBitrateLow')}</div></md-select-option
+                            >
+                            <md-select-option value="very-low"
+                                ><div slot="headline">${t('settingsBitrateVeryLow')}</div></md-select-option
                             >
                             <md-select-option value="custom"
                                 ><div slot="headline">${t('settingsBitrateCustom')}</div></md-select-option
@@ -529,6 +613,9 @@ export class Settings extends LitElement {
                             .value=${live(this.config.videoFormat.videoBitratePreset)}
                             ?disabled=${live(!hasVideo(this.config.videoFormat.recordingMode))}
                             @input=${this.updateProp('videoFormat', 'videoBitratePreset')}>
+                            <md-select-option value="very-high"
+                                ><div slot="headline">${t('settingsBitrateVeryHigh')}</div></md-select-option
+                            >
                             <md-select-option value="high"
                                 ><div slot="headline">${t('settingsBitrateHigh')}</div></md-select-option
                             >
@@ -537,6 +624,9 @@ export class Settings extends LitElement {
                             >
                             <md-select-option value="low"
                                 ><div slot="headline">${t('settingsBitrateLow')}</div></md-select-option
+                            >
+                            <md-select-option value="very-low"
+                                ><div slot="headline">${t('settingsBitrateVeryLow')}</div></md-select-option
                             >
                             <md-select-option value="custom"
                                 ><div slot="headline">${t('settingsBitrateCustom')}</div></md-select-option
@@ -964,11 +1054,13 @@ export class Settings extends LitElement {
                             this.ensureValidCodecs(e.target.value)
                             break
                         case 'videoCodec':
-                            if (!isVideoCodec(e.target.value)) return
+                            if (!isVideoCodec(e.target.value) || !this.availableVideoCodecs.includes(e.target.value))
+                                return
                             this.config[key1][key2] = e.target.value
                             break
                         case 'audioCodec':
-                            if (!isAudioCodec(e.target.value)) return
+                            if (!isAudioCodec(e.target.value) || !this.availableAudioCodecs.includes(e.target.value))
+                                return
                             this.config[key1][key2] = e.target.value
                             break
                         case 'recordingMode':
@@ -1128,21 +1220,58 @@ export class Settings extends LitElement {
     }
 
     private get availableVideoCodecs(): VideoCodecType[] {
-        return getContainerCodecs(this.config.videoFormat.container).video
+        return getContainerCodecs(this.config.videoFormat.container).video.filter(c =>
+            this.supportedVideoCodecs.includes(c),
+        )
     }
 
     private get availableAudioCodecs(): AudioCodecType[] {
-        return getContainerCodecs(this.config.videoFormat.container).audio
+        return getContainerCodecs(this.config.videoFormat.container).audio.filter(c =>
+            this.supportedAudioCodecs.includes(c),
+        )
     }
 
-    private ensureValidCodecs(container: ContainerFormat) {
+    private ensureValidCodecs(container: ContainerFormat): boolean {
         const { audio, video } = getContainerCodecs(container)
-        if (video.length > 0 && !video.includes(this.config.videoFormat.videoCodec)) {
-            this.config.videoFormat.videoCodec = video[0]
+        let changed = false
+
+        const supportedVideo = video.filter(c => this.supportedVideoCodecs.includes(c))
+        if (video.length > 0 && !supportedVideo.includes(this.config.videoFormat.videoCodec)) {
+            // Container has video codecs (i.e. not an audio-only container)
+            if (supportedVideo.length === 0) {
+                // No intersection between container codecs and browser-supported codecs:
+                // fall back to the default container (WebM) and its defaults (VP9 / Opus).
+                this.config.videoFormat.container = 'webm'
+                this.config.videoFormat.videoCodec = 'vp9'
+                this.config.videoFormat.audioCodec = 'opus'
+                return true
+            }
+            if (!supportedVideo.includes(this.config.videoFormat.videoCodec)) {
+                this.config.videoFormat.videoCodec = supportedVideo[0]
+                changed = true
+            }
         }
-        if (audio.length > 0 && !audio.includes(this.config.videoFormat.audioCodec)) {
-            this.config.videoFormat.audioCodec = audio[0]
+
+        const supportedAudio = audio.filter(c => this.supportedAudioCodecs.includes(c))
+        if (
+            this.audioSettingsEnabled &&
+            audio.length > 0 &&
+            !supportedAudio.includes(this.config.videoFormat.audioCodec)
+        ) {
+            if (supportedAudio.length === 0) {
+                // No supported audio codec for this container: fall back to opus on WebM.
+                this.config.videoFormat.container = 'webm'
+                this.config.videoFormat.videoCodec = 'vp9'
+                this.config.videoFormat.audioCodec = 'opus'
+                return true
+            }
+            if (!supportedAudio.includes(this.config.videoFormat.audioCodec)) {
+                this.config.videoFormat.audioCodec = supportedAudio[0]
+                changed = true
+            }
         }
+
+        return changed
     }
 
     private async validateEncoding() {
@@ -1282,21 +1411,19 @@ export class Settings extends LitElement {
         }
         const config = await chrome.runtime.sendMessage<FetchConfigMessage, Configuration | null>(msg)
         if (config == null) return
-        const oldVal = this.config
-        this.config = deepMerge(oldVal, Configuration.filterForSync(config))
-        this.requestUpdate('config', oldVal)
+        this.config = deepMerge(this.config, Configuration.filterForSync(config))
         Settings.setConfiguration(this.config)
         applyTheme(this.config.uiTheme)
+        await this.validateEncoding()
     }
 
     private async restore() {
-        const oldVal = this.config
         this.config = Configuration.restoreDefault(this.config)
-        this.requestUpdate('config', oldVal)
         this.resetValidityError()
         Settings.setConfiguration(this.config)
         applyTheme(this.config.uiTheme)
         await Settings.syncConfiguration(this.config)
+        await this.validateEncoding()
     }
 
     private resetValidityError() {

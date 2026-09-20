@@ -1,6 +1,10 @@
-vi.mock('mediabunny', () => ({
-    canEncodeAudio: vi.fn().mockResolvedValue(true),
-}))
+vi.mock('mediabunny', async importOriginal => {
+    const actual = await importOriginal<typeof import('mediabunny')>()
+    return {
+        ...actual,
+        canEncodeAudio: vi.fn().mockResolvedValue(true),
+    }
+})
 vi.mock('@mediabunny/flac-encoder', () => ({
     registerFlacEncoder: vi.fn(),
 }))
@@ -11,8 +15,10 @@ import {
     Configuration,
     audioSeparationContainer,
     isUITheme,
+    resolveBitrate,
     type RecordingTimerReport,
 } from '../src/configuration'
+import { Quality } from 'mediabunny'
 import { DEFAULT_SUMMARY_PROMPT } from '../src/summary/prompt'
 
 describe('migrateFromMimeType', () => {
@@ -494,5 +500,24 @@ describe('Configuration.transcription', () => {
         const migrated = Configuration.migrate(config, { summary: { enabled: true } })
         expect(migrated).toBe(true)
         expect(config.summary.prompt).toBe(DEFAULT_SUMMARY_PROMPT)
+    })
+})
+
+describe('resolveBitrate', () => {
+    test.each([
+        { preset: 'very-high', customValue: 5_000_000, expected: new Quality('very-high') },
+        { preset: 'high', customValue: 5_000_000, expected: new Quality('high') },
+        { preset: 'medium', customValue: 5_000_000, expected: new Quality('medium') },
+        { preset: 'low', customValue: 5_000_000, expected: new Quality('low') },
+        { preset: 'very-low', customValue: 5_000_000, expected: new Quality('very-low') },
+        { preset: 'custom', customValue: 2_500_000, expected: 2_500_000 },
+    ] as const)('resolves bitrate for preset "$preset"', ({ preset, customValue, expected }) => {
+        const result = resolveBitrate(preset, customValue)
+        if (typeof expected === 'number') {
+            expect(result).toBe(expected)
+        } else {
+            expect(result).toBeInstanceOf(Quality)
+            expect(result).toEqual(expected)
+        }
     })
 })
