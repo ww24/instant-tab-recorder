@@ -450,6 +450,26 @@
     "recordListRecordingFailed": {
         "message": "録画に失敗しました"
     },
+    "recordListDownloadTitle": {
+        "message": "ダウンロード中..."
+    },
+    "recordListDownloadCancel": {
+        "message": "キャンセル"
+    },
+    "recordListDownloadProgressFiles": {
+        "message": "$COUNT$ / $TOTAL$ ファイル",
+        "placeholders": {
+            "count": {
+                "content": "$1"
+            },
+            "total": {
+                "content": "$2"
+            }
+        }
+    },
+    "recordListDownloadFailed": {
+        "message": "ダウンロードに失敗しました。"
+    },
     "supportLicenses": {
         "message": "ライセンス情報"
     },

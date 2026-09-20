@@ -70,8 +70,8 @@ export function parseApiPath(pathname: string): { route: string; name?: string; 
         return { route: 'transcription', name, ext }
     }
 
-    // /api/recordings/:name/summary
-    const summaryMatch = path.match(/^recordings\/(.+)\/summary$/)
+    // /api/recordings/:name/summary(\.md)?
+    const summaryMatch = path.match(/^recordings\/(.+)\/summary(\.md)?$/)
     if (summaryMatch) {
         let name: string
         try {
@@ -80,7 +80,8 @@ export function parseApiPath(pathname: string): { route: string; name?: string; 
             return null
         }
         if (name.includes('/') || name.includes('\\')) return null
-        return { route: 'summary', name }
+        const ext = summaryMatch[2] ?? null
+        return { route: 'summary', name, ext }
     }
 
     // /api/recordings/:name
@@ -215,8 +216,8 @@ export async function handleApiRequest(
                             status,
                             subFiles: r.subFiles,
                             subFilesSize,
-                            hasTranscription: r.transcription != null,
-                            hasSummary: r.summary != null,
+                            hasTranscription: (r.transcription?.segments?.length ?? 0) > 0,
+                            hasSummary: (r.summary?.text?.length ?? 0) > 0,
                             ...(thumbnailFileName ? { thumbnailFileName } : {}),
                         }
                     }),
@@ -245,7 +246,7 @@ export async function handleApiRequest(
                 }
 
                 if (parsed.ext === '.vtt' || parsed.ext === '.srt') {
-                    if (request.method !== 'GET') {
+                    if (request.method !== 'GET' && request.method !== 'HEAD') {
                         return new Response(JSON.stringify({ error: 'Method Not Allowed' }), {
                             status: 405,
                             headers: { 'Content-Type': 'application/json' },
@@ -265,7 +266,11 @@ export async function handleApiRequest(
                             : segmentsToSRT(record.transcription.segments)
 
                     const mimeType = format === 'vtt' ? 'text/vtt' : 'application/x-subrip'
-                    const headers: Record<string, string> = { 'Content-Type': `${mimeType}; charset=utf-8` }
+                    const bodyBytes = new TextEncoder().encode(body)
+                    const headers: Record<string, string> = {
+                        'Content-Type': `${mimeType}; charset=utf-8`,
+                        'Content-Length': bodyBytes.byteLength.toString(),
+                    }
 
                     if (url.searchParams.get('download') === 'true') {
                         const baseName = name.replace(/\.[^.]+$/, '')
@@ -274,10 +279,15 @@ export async function handleApiRequest(
                         headers['Content-Disposition'] = `attachment; filename*=UTF-8''${encoded}`
                     }
 
+                    if (request.method === 'HEAD') {
+                        return new Response(null, { status: 200, headers })
+                    }
+
                     return new Response(body, { status: 200, headers })
                 }
 
                 switch (request.method) {
+                    case 'HEAD':
                     case 'GET': {
                         if (!record?.transcription) {
                             return new Response(JSON.stringify({ error: 'Transcription not found' }), {
@@ -285,9 +295,14 @@ export async function handleApiRequest(
                                 headers: { 'Content-Type': 'application/json' },
                             })
                         }
-                        return new Response(JSON.stringify(record.transcription), {
+                        const json = JSON.stringify(record.transcription)
+                        const headers: Record<string, string> = {
+                            'Content-Type': 'application/json',
+                            'Content-Length': new TextEncoder().encode(json).byteLength.toString(),
+                        }
+                        return new Response(request.method === 'HEAD' ? null : json, {
                             status: 200,
-                            headers: { 'Content-Type': 'application/json' },
+                            headers,
                         })
                     }
                     case 'PUT': {
@@ -346,7 +361,46 @@ export async function handleApiRequest(
                     })
                 }
 
+                if (parsed.ext === '.md') {
+                    if (request.method !== 'GET' && request.method !== 'HEAD') {
+                        return new Response(JSON.stringify({ error: 'Method Not Allowed' }), {
+                            status: 405,
+                            headers: { 'Content-Type': 'application/json' },
+                        })
+                    }
+                    if (!record?.summary) {
+                        return new Response(
+                            request.method === 'HEAD' ? null : JSON.stringify({ error: 'Summary not found' }),
+                            {
+                                status: 404,
+                                headers: { 'Content-Type': 'application/json' },
+                            },
+                        )
+                    }
+
+                    const body = record.summary.text
+                    const bodyBytes = new TextEncoder().encode(body)
+                    const headers: Record<string, string> = {
+                        'Content-Type': 'text/markdown; charset=utf-8',
+                        'Content-Length': bodyBytes.byteLength.toString(),
+                    }
+
+                    if (url.searchParams.get('download') === 'true') {
+                        const baseName = name.replace(/\.[^.]+$/, '')
+                        const fileName = `${baseName}-summary.md`
+                        const encoded = encodeURIComponent(fileName).replace(/'/g, '%27')
+                        headers['Content-Disposition'] = `attachment; filename*=UTF-8''${encoded}`
+                    }
+
+                    if (request.method === 'HEAD') {
+                        return new Response(null, { status: 200, headers })
+                    }
+
+                    return new Response(body, { status: 200, headers })
+                }
+
                 switch (request.method) {
+                    case 'HEAD':
                     case 'GET': {
                         if (!record?.summary) {
                             return new Response(JSON.stringify({ error: 'Summary not found' }), {
@@ -354,9 +408,14 @@ export async function handleApiRequest(
                                 headers: { 'Content-Type': 'application/json' },
                             })
                         }
-                        return new Response(JSON.stringify(record.summary), {
+                        const json = JSON.stringify(record.summary)
+                        const headers: Record<string, string> = {
+                            'Content-Type': 'application/json',
+                            'Content-Length': new TextEncoder().encode(json).byteLength.toString(),
+                        }
+                        return new Response(request.method === 'HEAD' ? null : json, {
                             status: 200,
-                            headers: { 'Content-Type': 'application/json' },
+                            headers,
                         })
                     }
                     case 'PUT': {
@@ -411,7 +470,7 @@ export async function handleApiRequest(
                 // Thumbnail files are read-only: video-{timestamp}-thumbnail.webp
                 const thumbnailMatch = name.match(/^video-([0-9]+)-thumbnail\.webp$/)
                 if (thumbnailMatch) {
-                    if (request.method !== 'GET') {
+                    if (request.method !== 'GET' && request.method !== 'HEAD') {
                         return new Response(JSON.stringify({ error: 'Method Not Allowed' }), {
                             status: 405,
                             headers: { 'Content-Type': 'application/json' },
@@ -425,9 +484,13 @@ export async function handleApiRequest(
                             headers: { 'Content-Type': 'application/json' },
                         })
                     }
-                    return new Response(thumbRecord.thumbnail, {
+                    const headers: Record<string, string> = {
+                        'Content-Type': mimeType,
+                        'Content-Length': thumbRecord.thumbnail.size.toString(),
+                    }
+                    return new Response(request.method === 'HEAD' ? null : thumbRecord.thumbnail, {
                         status: 200,
-                        headers: { 'Content-Type': mimeType },
+                        headers,
                     })
                 }
 
@@ -474,14 +537,14 @@ export async function handleApiRequest(
                     return new Response(null, { status: 204 })
                 }
 
-                if (request.method !== 'GET') {
+                if (request.method !== 'GET' && request.method !== 'HEAD') {
                     return new Response(JSON.stringify({ error: 'Method Not Allowed' }), {
                         status: 405,
                         headers: { 'Content-Type': 'application/json' },
                     })
                 }
 
-                // GET /api/recordings/:name - return binary file
+                // GET / HEAD /api/recordings/:name - return binary file
                 const file = await storage.getFile(name)
                 if (!file) {
                     // Self-healing: clean up orphaned IndexedDB record
@@ -513,7 +576,7 @@ export async function handleApiRequest(
 
                 // Handle Range requests (RFC 9110 Section 14)
                 const rangeHeader = request.headers.get('Range')
-                if (rangeHeader) {
+                if (rangeHeader && request.method !== 'HEAD') {
                     const rangeResult = parseRangeHeader(rangeHeader)
                     if (rangeResult && rangeResult.type === 'bytes' && rangeResult.ranges.length > 0) {
                         // Resolve all ranges; collect satisfiable ones
@@ -566,7 +629,7 @@ export async function handleApiRequest(
 
                 // Full response
                 headers['Content-Length'] = file.size.toString()
-                return new Response(file, {
+                return new Response(request.method === 'HEAD' ? null : file, {
                     status: 200,
                     headers,
                 })

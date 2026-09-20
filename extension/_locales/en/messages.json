@@ -601,6 +601,32 @@
         "message": "Recording Failed",
         "description": "Alert headline when recording fails"
     },
+    "recordListDownloadTitle": {
+        "message": "Downloading...",
+        "description": "Headline for download progress dialog"
+    },
+    "recordListDownloadCancel": {
+        "message": "Cancel",
+        "description": "Button label to cancel download in progress"
+    },
+    "recordListDownloadProgressFiles": {
+        "message": "$COUNT$ / $TOTAL$ files",
+        "description": "Progress text showing number of downloaded files out of total",
+        "placeholders": {
+            "count": {
+                "content": "$1",
+                "example": "1"
+            },
+            "total": {
+                "content": "$2",
+                "example": "5"
+            }
+        }
+    },
+    "recordListDownloadFailed": {
+        "message": "Failed to download recordings.",
+        "description": "Error message when downloading recordings fails"
+    },
     "supportLicenses": {
         "message": "License Information",
         "description": "Support section: License heading"

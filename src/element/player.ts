@@ -922,7 +922,7 @@ export class Player extends LitElement {
                                                             </md-filled-button>
                                                         </div>
                                                     `
-                                                  : this.transcriptionSegments?.length === 0
+                                                  : (this.transcriptionSegments?.length ?? 0) === 0
                                                     ? html`
                                                           <div class="status-center">
                                                               <p>${t('playerNoSpeechDetected')}</p>
@@ -1048,7 +1048,7 @@ export class Player extends LitElement {
                                           <p>${t('playerSummaryModelNotReady')}</p>
                                       </div>
                                   `
-                                : !this.hasTranscription
+                                : !this.hasTranscription || (this.transcriptionSegments?.length ?? 0) === 0
                                   ? html`
                                         <div class="summary-notice">
                                             <p>${t('playerSummaryNoTranscription')}</p>
@@ -1089,7 +1089,7 @@ export class Player extends LitElement {
                                           ${t('confirmCancelButton')}
                                       </md-text-button>
                                   `
-                                : !this.hasTranscription
+                                : !this.hasTranscription || (this.transcriptionSegments?.length ?? 0) === 0
                                   ? html`
                                         <md-text-button @click=${this.closeSummaryDialog}>
                                             ${t('alertOk')}

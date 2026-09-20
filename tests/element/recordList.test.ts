@@ -10,12 +10,21 @@ import { MdCheckbox } from '@material/web/checkbox/checkbox'
 
 // Mock the api_client module used by RecordList
 const listRecordingsMock = vi.fn().mockResolvedValue([])
+const getRecordingFileMock = vi.fn().mockResolvedValue(null)
+const getTranscriptionMock = vi.fn().mockResolvedValue(null)
+const getSummaryMock = vi.fn().mockResolvedValue(null)
+const getContentLengthMock = vi.fn().mockResolvedValue(null)
+const getFileStreamMock = vi.fn().mockResolvedValue(null)
 vi.mock('../../src/api_client', () => ({
     recordingApi: {
         listRecordings: (...args: unknown[]) => listRecordingsMock(...args),
-        getRecordingFile: vi.fn().mockResolvedValue(null),
+        getRecordingFile: (...args: unknown[]) => getRecordingFileMock(...args),
         deleteRecording: vi.fn().mockResolvedValue(undefined),
         getStorageEstimate: vi.fn().mockResolvedValue({ usage: 0, quota: 1073741824 }),
+        getTranscription: (...args: unknown[]) => getTranscriptionMock(...args),
+        getSummary: (...args: unknown[]) => getSummaryMock(...args),
+        getContentLength: (...args: unknown[]) => getContentLengthMock(...args),
+        getFileStream: (...args: unknown[]) => getFileStreamMock(...args),
     },
 }))
 
@@ -29,6 +38,11 @@ vi.mock('../../src/sentry', () => ({
 describe('record-list', () => {
     beforeEach(() => {
         listRecordingsMock.mockReset().mockResolvedValue([])
+        getRecordingFileMock.mockReset().mockResolvedValue(null)
+        getTranscriptionMock.mockReset().mockResolvedValue(null)
+        getSummaryMock.mockReset().mockResolvedValue(null)
+        getContentLengthMock.mockReset().mockResolvedValue(null)
+        getFileStreamMock.mockReset().mockResolvedValue(null)
     })
 
     test('renders storage heading', async () => {
@@ -663,5 +677,280 @@ describe('record-list fetch error', () => {
             const listItem = shadowQuery(el, 'md-list md-list-item')
             expect(listItem?.textContent?.trim()).toBe('no entry')
         })
+    })
+
+    test('updates hasSummary on summary-complete and summary-deleted messages', async () => {
+        const ts = '1000000000000'
+        listRecordingsMock.mockResolvedValue([
+            {
+                title: `video-${ts}.webm`,
+                path: `video-${ts}.webm`,
+                size: 1024,
+                lastModified: Date.now(),
+                mimeType: 'video/webm',
+                recordedAt: Number(ts),
+                isRecording: false,
+                isTemporary: false,
+                subFiles: [],
+                subFilesSize: 0,
+                hasSummary: false,
+            },
+        ])
+
+        const screen = render(html`<record-list></record-list>`)
+        const el = screen.container.querySelector('record-list')!
+        await elementUpdated(el)
+
+        // Wait for list to render
+        await vi.waitFor(() => {
+            expect(shadowQuery(el, 'md-list-item')).not.toBeNull()
+        })
+
+        // Send summary-complete message
+        simulateChromeMessage({
+            type: 'summary-complete',
+            path: `video-${ts}.webm`,
+            summary: {
+                text: '# Summary text',
+                summarizedAt: Date.now(),
+                modelId: 'test-model',
+            },
+        })
+        await elementUpdated(el)
+
+        // Verify hasSummary updated
+        const records = (el as any).records
+        expect(records[0]?.hasSummary).toBe(true)
+
+        // Send summary-deleted message
+        simulateChromeMessage({
+            type: 'summary-deleted',
+            path: `video-${ts}.webm`,
+        })
+        await elementUpdated(el)
+
+        expect(records[0]?.hasSummary).toBe(false)
+    })
+
+    test('updates hasTranscription on transcription-complete and transcription-deleted messages', async () => {
+        const ts = '1000000000000'
+        listRecordingsMock.mockResolvedValue([
+            {
+                title: `video-${ts}.webm`,
+                path: `video-${ts}.webm`,
+                size: 2048,
+                lastModified: Date.now(),
+                mimeType: 'video/webm',
+                recordedAt: Number(ts),
+                isRecording: false,
+                isTemporary: false,
+                subFiles: [],
+                subFilesSize: 0,
+                hasTranscription: false,
+            },
+        ])
+
+        const screen = render(html`<record-list></record-list>`)
+        const el = screen.container.querySelector('record-list')!
+        await elementUpdated(el)
+
+        // Wait for list to render
+        await vi.waitFor(() => {
+            expect(shadowQuery(el, 'md-list-item')).not.toBeNull()
+        })
+
+        // Mock transcription with segments
+        getTranscriptionMock.mockResolvedValueOnce({
+            segments: [{ startSec: 0, endSec: 1, text: 'Hello' }],
+            transcribedAt: Date.now(),
+            modelId: 'whisper',
+            language: 'en',
+        })
+
+        // Send transcription-complete message
+        simulateChromeMessage({
+            type: 'transcription-complete',
+            path: `video-${ts}.webm`,
+        })
+
+        // Verify hasTranscription updated to true
+        await vi.waitFor(() => {
+            const records = (el as any).records
+            expect(records[0]?.hasTranscription).toBe(true)
+        })
+
+        // Send transcription-deleted message
+        simulateChromeMessage({
+            type: 'transcription-deleted',
+            path: `video-${ts}.webm`,
+        })
+        await elementUpdated(el)
+
+        expect((el as any).records[0]?.hasTranscription).toBe(false)
+    })
+
+    test('saveSelectedRecords downloads main file, sub-files, transcription, and summary, and shows progress dialog', async () => {
+        const ts = '1000000000000'
+        const mainPath = `video-${ts}.webm`
+        const tabPath = `video-${ts}-tab.webm`
+        listRecordingsMock.mockResolvedValue([
+            {
+                title: mainPath,
+                path: mainPath,
+                size: 2048,
+                lastModified: Date.now(),
+                mimeType: 'video/webm',
+                recordedAt: Number(ts),
+                isRecording: false,
+                isTemporary: false,
+                subFiles: [{ path: tabPath, type: 'tab', fileSize: 1024 }],
+                subFilesSize: 1024,
+                hasTranscription: true,
+                hasSummary: true,
+            },
+        ])
+
+        // Mock recordingApi
+        getContentLengthMock.mockImplementation(async (url: string) => {
+            if (url.includes('transcription.vtt')) return 100
+            if (url.includes('summary.md')) return 50
+            return null
+        })
+        getFileStreamMock.mockImplementation(async (url: string) => {
+            let text = ''
+            if (url.includes('transcription.vtt')) text = 'WEBVTT\n\n00:00:00.000 --> 00:00:02.000\nHello world'
+            else if (url.includes('summary.md')) text = '# Summary content'
+            else if (url.includes(tabPath)) text = 'audio-data'
+            else if (url.includes(mainPath)) text = 'video-data'
+            const bytes = new TextEncoder().encode(text)
+            return new ReadableStream({
+                start(controller) {
+                    controller.enqueue(bytes)
+                    controller.close()
+                },
+            })
+        })
+
+        // Mock window.showDirectoryPicker
+        const writtenFiles = new Map<string, string>()
+        const mockFileHandle = (name: string) => ({
+            createWritable: vi.fn().mockImplementation(async () => {
+                const chunks: Uint8Array[] = []
+                return new WritableStream<Uint8Array>({
+                    write(chunk) {
+                        chunks.push(chunk)
+                    },
+                    close() {
+                        const str = chunks.map(c => new TextDecoder().decode(c)).join('')
+                        writtenFiles.set(name, str)
+                    },
+                })
+            }),
+        })
+
+        const originalShowDirectoryPicker = window.showDirectoryPicker
+        const mockDirHandle = {
+            queryPermission: vi.fn().mockResolvedValue('granted'),
+            requestPermission: vi.fn().mockResolvedValue('granted'),
+            getFileHandle: vi.fn().mockImplementation(async (name: string) => mockFileHandle(name)),
+        }
+        window.showDirectoryPicker = vi.fn().mockResolvedValue(mockDirHandle)
+
+        try {
+            const screen = render(html`<record-list></record-list>`)
+            const el = screen.container.querySelector('record-list')!
+            await elementUpdated(el)
+
+            await vi.waitFor(() => {
+                expect(shadowQuery(el, 'md-list-item')).not.toBeNull()
+            })
+
+            // Select the record
+            const checkbox = shadowQuery(el, 'md-checkbox') as HTMLElement
+            checkbox.click()
+            await elementUpdated(el)
+
+            // Verify Save chip is enabled
+            const saveChip = shadowQuery(el, 'md-assist-chip[label="Save"]') as HTMLElement
+            expect(saveChip.hasAttribute('disabled')).toBe(false)
+
+            // Trigger saveSelectedRecords
+            const savePromise = (el as any).saveSelectedRecords()
+
+            await vi.waitFor(() => {
+                const dialog = shadowQuery(el, '#download-dialog')
+                expect(dialog).not.toBeNull()
+            })
+
+            // Wait for save to complete
+            await savePromise
+            await elementUpdated(el)
+
+            // Check that all 4 files were written
+            expect(writtenFiles.has(mainPath)).toBe(true)
+            expect(writtenFiles.has(tabPath)).toBe(true)
+            expect(writtenFiles.has(`video-${ts}.vtt`)).toBe(true)
+            expect(writtenFiles.has(`video-${ts}-summary.md`)).toBe(true)
+
+            // Check contents
+            expect(writtenFiles.get(`video-${ts}.vtt`)).toContain('WEBVTT')
+            expect(writtenFiles.get(`video-${ts}.vtt`)).toContain('Hello world')
+            expect(writtenFiles.get(`video-${ts}-summary.md`)).toBe('# Summary content')
+
+            // Dialog should be closed after completion
+            const dialog = shadowQuery(el, '#download-dialog') as HTMLElement | null
+            expect((dialog as any)?.open).toBe(false)
+        } finally {
+            window.showDirectoryPicker = originalShowDirectoryPicker
+        }
+    })
+
+    test('download dialog prevents cancellation on cancel/escape and supports cancel button', async () => {
+        const ts = '1000000000000'
+        const mainPath = `video-${ts}.webm`
+        listRecordingsMock.mockResolvedValue([
+            {
+                title: mainPath,
+                path: mainPath,
+                size: 2048,
+                lastModified: Date.now(),
+                mimeType: 'video/webm',
+                recordedAt: Number(ts),
+                isRecording: false,
+                isTemporary: false,
+                subFiles: [],
+                subFilesSize: 0,
+            },
+        ])
+
+        const screen = render(html`<record-list></record-list>`)
+        const el = screen.container.querySelector('record-list')!
+        await elementUpdated(el)
+
+        // Test cancel event on dialog (outside click)
+        const dialog = shadowQuery(el, '#download-dialog') as HTMLElement
+        expect(dialog).not.toBeNull()
+
+        const cancelEvent = new CustomEvent('cancel', { cancelable: true })
+        dialog.dispatchEvent(cancelEvent)
+        expect(cancelEvent.defaultPrevented).toBe(true)
+
+        // Test escape key on dialog
+        const escapeEvent = new KeyboardEvent('keydown', { key: 'Escape', cancelable: true })
+        dialog.dispatchEvent(escapeEvent)
+        expect(escapeEvent.defaultPrevented).toBe(true)
+
+        // Test cancel button
+        ;(el as any).isDownloading = true
+        ;(el as any).downloadAbortController = new AbortController()
+        await elementUpdated(el)
+
+        const cancelBtn = shadowQuery(el, '#download-dialog md-text-button') as HTMLElement
+        expect(cancelBtn).not.toBeNull()
+        cancelBtn.click()
+        await elementUpdated(el)
+
+        expect((el as any).isDownloading).toBe(false)
+        expect((el as any).downloadAbortController.signal.aborted).toBe(true)
     })
 })
