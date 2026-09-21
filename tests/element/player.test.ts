@@ -122,6 +122,60 @@ describe('extension-player', () => {
         expect((el as any).showDownloadMenu).toBe(true)
     })
 
+    test('renders start transcription button when transcription has not been executed', async () => {
+        getTranscriptionMock.mockResolvedValue(null)
+
+        const screen = render(html`<extension-player></extension-player>`)
+        const el = screen.container.querySelector('extension-player') as Player
+        el.path = 'test-recording.webm'
+        await elementUpdated(el)
+
+        await vi.waitFor(() => {
+            expect(getTranscriptionMock).toHaveBeenCalledWith('test-recording.webm')
+        })
+        await elementUpdated(el)
+
+        const startButton = shadowQuery(el, '.status-center md-filled-button')
+        expect(startButton).not.toBeNull()
+        expect(startButton?.textContent).toContain('Transcribe')
+        expect(shadowQuery(el, '.segment-list')).toBeNull()
+        expect(shadowQuery(el, '.panel-actions')).toBeNull()
+    })
+
+    test('renders no speech detected message when transcription has no segments', async () => {
+        const mockResult: TranscriptionResult = {
+            transcribedAt: 1234567890,
+            modelId: 'openai/whisper-tiny',
+            language: 'en',
+            segments: [],
+        }
+        getTranscriptionMock.mockResolvedValue(mockResult)
+
+        const screen = render(html`<extension-player></extension-player>`)
+        const el = screen.container.querySelector('extension-player') as Player
+        el.path = 'test-recording.webm'
+        await elementUpdated(el)
+
+        await vi.waitFor(() => {
+            expect(getTranscriptionMock).toHaveBeenCalledWith('test-recording.webm')
+        })
+        await elementUpdated(el)
+
+        // Should render playerNoSpeechDetected message
+        const noSpeechText = shadowQuery(el, '.status-center p')
+        expect(noSpeechText).not.toBeNull()
+        expect(noSpeechText?.textContent).toBe('No speech detected.')
+
+        // Should NOT render start transcription button or segment list
+        expect(shadowQuery(el, '.status-center md-filled-button')).toBeNull()
+        expect(shadowQuery(el, '.segment-list')).toBeNull()
+
+        // Should render delete button, but not summary or download buttons
+        expect(shadowQuery(el, 'md-icon-button[title="Delete Transcription"]')).not.toBeNull()
+        expect(shadowQuery(el, '#summary-button')).toBeNull()
+        expect(shadowQuery(el, '#download-menu-anchor')).toBeNull()
+    })
+
     test('deletes transcription via recordingApi on confirmDelete', async () => {
         const mockResult: TranscriptionResult = {
             transcribedAt: 1234567890,

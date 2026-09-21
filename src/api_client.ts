@@ -248,6 +248,33 @@ export class RecordingApiClient {
         }
         return response.json()
     }
+
+    /**
+     * Get Content-Length for an endpoint via HEAD request
+     */
+    async getContentLength(url: string): Promise<number | null> {
+        await ensureControlled()
+        const response = await fetch(url, { method: 'HEAD' })
+        if (!response.ok) {
+            return null
+        }
+        const length = response.headers.get('Content-Length')
+        if (length == null) return null
+        const parsed = Number.parseInt(length, 10)
+        return Number.isFinite(parsed) && parsed >= 0 ? parsed : null
+    }
+
+    /**
+     * Get readable stream for downloading a file directly
+     */
+    async getFileStream(url: string, signal?: AbortSignal): Promise<ReadableStream<Uint8Array> | null> {
+        await ensureControlled()
+        const response = await fetch(url, { signal })
+        if (!response.ok || !response.body) {
+            return null
+        }
+        return response.body
+    }
 }
 
 /**

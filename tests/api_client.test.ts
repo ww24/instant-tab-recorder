@@ -322,6 +322,68 @@ describe('RecordingApiClient', () => {
             const result = await client.getStorageEstimate()
             expect(result).toEqual(estimate)
         })
+
+        it('getContentLength returns parsed number on 200 with header', async () => {
+            globalThis.fetch = vi.fn().mockResolvedValue({
+                ok: true,
+                status: 200,
+                headers: new Headers({ 'Content-Length': '12345' }),
+            } as unknown as Response)
+
+            const result = await client.getContentLength('/api/test')
+            expect(result).toBe(12345)
+            expect(globalThis.fetch).toHaveBeenCalledWith('/api/test', { method: 'HEAD' })
+        })
+
+        it('getContentLength returns null on non-ok or missing header', async () => {
+            globalThis.fetch = vi.fn().mockResolvedValueOnce({
+                ok: false,
+                status: 404,
+                headers: new Headers(),
+            } as unknown as Response)
+
+            expect(await client.getContentLength('/api/missing')).toBeNull()
+
+            globalThis.fetch = vi.fn().mockResolvedValueOnce({
+                ok: true,
+                status: 200,
+                headers: new Headers(),
+            } as unknown as Response)
+
+            expect(await client.getContentLength('/api/no-length')).toBeNull()
+        })
+
+        it('getFileStream returns response.body stream on success', async () => {
+            const mockStream = new ReadableStream()
+            globalThis.fetch = vi.fn().mockResolvedValue({
+                ok: true,
+                status: 200,
+                body: mockStream,
+            } as unknown as Response)
+
+            const controller = new AbortController()
+            const result = await client.getFileStream('/api/file', controller.signal)
+            expect(result).toBe(mockStream)
+            expect(globalThis.fetch).toHaveBeenCalledWith('/api/file', { signal: controller.signal })
+        })
+
+        it('getFileStream returns null on error or empty body', async () => {
+            globalThis.fetch = vi.fn().mockResolvedValueOnce({
+                ok: false,
+                status: 500,
+                body: null,
+            } as unknown as Response)
+
+            expect(await client.getFileStream('/api/error')).toBeNull()
+
+            globalThis.fetch = vi.fn().mockResolvedValueOnce({
+                ok: true,
+                status: 200,
+                body: null,
+            } as unknown as Response)
+
+            expect(await client.getFileStream('/api/no-body')).toBeNull()
+        })
     })
 
     describe('recordingApi default instance', () => {

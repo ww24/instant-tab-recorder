@@ -10,7 +10,10 @@ import '@material/web/iconbutton/filled-icon-button'
 import '@material/web/button/filled-tonal-button'
 import '@material/web/chips/chip-set'
 import '@material/web/chips/assist-chip'
+import '@material/web/dialog/dialog'
 import type { MdDialog } from '@material/web/dialog/dialog'
+import '@material/web/button/text-button'
+import '@material/web/progress/linear-progress'
 import { MdCheckbox } from '@material/web/checkbox/checkbox'
 import { MdFilterChip } from '@material/web/chips/filter-chip'
 import Confirm from './confirm'
@@ -39,6 +42,7 @@ export interface RecordEntry {
     subFilesSize: number // Total size of sub-files in bytes
     thumbnailFileName?: string
     hasTranscription?: boolean
+    hasSummary?: boolean
 }
 
 /**
@@ -186,6 +190,30 @@ export class RecordList extends LitElement {
             font-size: 0.875rem;
             font-weight: 500;
         }
+        md-dialog {
+            --md-dialog-container-color: var(--theme-dialog-bg, var(--md-sys-color-surface-container-high));
+        }
+        .download-dialog-content {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            min-width: 360px;
+        }
+        .download-filename {
+            margin: 0;
+            font-size: 0.875rem;
+            color: var(--theme-text, inherit);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .download-status {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.75rem;
+            color: var(--theme-text-secondary, #3f4948);
+            font-variant-numeric: tabular-nums;
+        }
     `
 
     private static readonly dateTimeFormat = new Intl.DateTimeFormat(undefined, {
@@ -222,6 +250,29 @@ export class RecordList extends LitElement {
 
     @state()
     private fetchError: boolean = false
+
+    @state()
+    private isDownloading: boolean = false
+
+    @state()
+    private downloadProgressValue: number = 0
+
+    @state()
+    private downloadCurrentFile: string = ''
+
+    @state()
+    private downloadCompletedFiles: number = 0
+
+    @state()
+    private downloadTotalFiles: number = 0
+
+    @state()
+    private downloadLoadedBytes: number = 0
+
+    @state()
+    private downloadTotalBytes: number = 0
+
+    private downloadAbortController: AbortController | null = null
 
     private recordingStartAtMs: number | null = null
     private recordingStopAtMs: number | null = null
@@ -263,9 +314,16 @@ export class RecordList extends LitElement {
         if (message.type === 'transcription-complete') {
             const target = this.records.find(r => r.path === message.path)
             if (target) {
-                const oldVal = [...this.records]
-                target.hasTranscription = true
-                this.requestUpdate('records', oldVal)
+                recordingApi
+                    .getTranscription(message.path)
+                    .then(transcription => {
+                        const oldVal = [...this.records]
+                        target.hasTranscription = (transcription?.segments?.length ?? 0) > 0
+                        this.requestUpdate('records', oldVal)
+                    })
+                    .catch(e => {
+                        console.error('Failed to check transcription segments:', e)
+                    })
             }
             return
         }
@@ -274,6 +332,24 @@ export class RecordList extends LitElement {
             if (target) {
                 const oldVal = [...this.records]
                 target.hasTranscription = false
+                this.requestUpdate('records', oldVal)
+            }
+            return
+        }
+        if (message.type === 'summary-complete') {
+            const target = this.records.find(r => r.path === message.path)
+            if (target) {
+                const oldVal = [...this.records]
+                target.hasSummary = (message.summary.text?.length ?? 0) > 0
+                this.requestUpdate('records', oldVal)
+            }
+            return
+        }
+        if (message.type === 'summary-deleted') {
+            const target = this.records.find(r => r.path === message.path)
+            if (target) {
+                const oldVal = [...this.records]
+                target.hasSummary = false
                 this.requestUpdate('records', oldVal)
             }
             return
@@ -504,7 +580,34 @@ export class RecordList extends LitElement {
                           ? html`<md-list-item>${t('recordListNoEntry')}</md-list-item>`
                           : repeat(this.records, record => record.path, row)
                 }
-            </md-list>`
+            </md-list>
+            <md-dialog
+                id="download-dialog"
+                .open=${this.isDownloading}
+                @cancel=${this.handleDownloadDialogCancel}
+                @keydown=${this.handleDownloadDialogKeydown}>
+                <div slot="headline">${t('recordListDownloadTitle')}</div>
+                <md-icon slot="icon">download</md-icon>
+                <div slot="content" class="download-dialog-content">
+                    <p class="download-filename">${this.downloadCurrentFile}</p>
+                    <md-linear-progress
+                        .value=${this.downloadProgressValue}
+                        ?indeterminate=${this.downloadTotalBytes === 0}>
+                    </md-linear-progress>
+                    <div class="download-status">
+                        <span
+                            >${t('recordListDownloadProgressFiles', [this.downloadCompletedFiles.toString(), this.downloadTotalFiles.toString()])}</span
+                        >
+                        <span
+                            >${formatFileSize(this.downloadLoadedBytes)} /
+                            ${formatFileSize(this.downloadTotalBytes)}</span
+                        >
+                    </div>
+                </div>
+                <div slot="actions">
+                    <md-text-button @click=${this.cancelDownload}> ${t('recordListDownloadCancel')} </md-text-button>
+                </div>
+            </md-dialog>`
     }
 
     private removeRecord(record: RecordEntry) {
@@ -542,6 +645,7 @@ export class RecordList extends LitElement {
             subFilesSize: meta.subFilesSize ?? 0,
             thumbnailFileName: meta.thumbnailFileName,
             hasTranscription: meta.hasTranscription ?? false,
+            hasSummary: meta.hasSummary ?? false,
         }))
 
         const oldVal = [...this.records]
@@ -659,55 +763,190 @@ export class RecordList extends LitElement {
         })
         this.requestUpdate('records', oldVal)
     }
-    private async saveSelectedRecords() {
-        const options: ShowDirectoryPickerOptions = {
-            id: 'save-directory',
-            mode: 'readwrite',
-            startIn: 'downloads',
+    private handleDownloadDialogCancel(e: Event) {
+        e.preventDefault()
+    }
+
+    private handleDownloadDialogKeydown(e: KeyboardEvent) {
+        if (e.key === 'Escape') {
+            e.preventDefault()
+            e.stopPropagation()
         }
-        const dirHandle = await window.showDirectoryPicker(options)
-        const permission = await checkFileHandlePermission(dirHandle)
-        if (!permission) {
-            throw new Error('permission denied')
+    }
+
+    private cancelDownload() {
+        this.downloadAbortController?.abort()
+        this.isDownloading = false
+    }
+
+    private static showSaveError(error: unknown) {
+        const alertDialog = document.getElementById('alert-dialog') as Alert | null
+        if (alertDialog == null) return
+        const message = error instanceof Error ? error.message : String(error)
+        alertDialog.setContent(t('recordListDownloadFailed'), message, { preformatted: true })
+        const dialog = alertDialog.shadowRoot?.querySelector('md-dialog') as MdDialog | null
+        dialog?.show()
+    }
+
+    private async saveSelectedRecords() {
+        if (this.downloadAbortController != null) return
+        const selectedRecords = this.records.filter(isSelected)
+        if (selectedRecords.length === 0) return
+        let dirHandle: FileSystemDirectoryHandle
+        try {
+            const options: ShowDirectoryPickerOptions = {
+                id: 'save-directory',
+                mode: 'readwrite',
+                startIn: 'downloads',
+            }
+            dirHandle = await window.showDirectoryPicker(options)
+            const permission = await checkFileHandlePermission(dirHandle)
+            if (!permission) {
+                throw new Error('permission denied')
+            }
+        } catch (e) {
+            if (e instanceof DOMException && e.name === 'AbortError') {
+                return
+            }
+            console.error('Failed to get directory handle:', e)
+            RecordList.showSaveError(e)
+            return
         }
 
-        const selectedRecords = this.records.filter(isSelected)
+        interface DownloadFileItem {
+            fileName: string
+            url: string
+            size: number
+        }
+
+        const items: DownloadFileItem[] = []
 
         for (const record of selectedRecords) {
-            // Save main file
-            console.log('Copy:', record.path)
-            const fileHandle = await dirHandle.getFileHandle(record.path, { create: true })
-            const blob = await recordingApi.getRecordingFile(record.path)
-            if (!blob) {
-                console.error('File not found:', record.path)
-                continue
-            }
-            const writableStream = await fileHandle.createWritable()
-            try {
-                await blob.stream().pipeTo(writableStream)
-            } catch (e) {
-                writableStream.close()
-                throw e
-            }
-            // Save related sub-files
+            const baseName = record.path.replace(/\.[^.]+$/, '')
+
+            // 1. Main recording file
+            items.push({
+                fileName: record.path,
+                url: `/api/recordings/${encodeURIComponent(record.path)}?download=true`,
+                size: record.size,
+            })
+
+            // 2. Sub-files (audio separation)
             for (const subFile of record.subFiles) {
-                console.log('Copy sub-file:', subFile.path)
-                const subHandle = await dirHandle.getFileHandle(subFile.path, { create: true })
-                const subBlob = await recordingApi.getRecordingFile(subFile.path)
-                if (!subBlob) {
-                    console.warn('Sub-file not found:', subFile)
-                    continue
+                items.push({
+                    fileName: subFile.path,
+                    url: `/api/recordings/${encodeURIComponent(subFile.path)}?download=true`,
+                    size: subFile.fileSize,
+                })
+            }
+
+            // 3. Transcription (if present)
+            if (record.hasTranscription) {
+                const vttUrl = `/api/recordings/${encodeURIComponent(record.path)}/transcription.vtt?download=true`
+                const size = await recordingApi.getContentLength(vttUrl)
+                if (size != null && size > 0) {
+                    items.push({
+                        fileName: `${baseName}.vtt`,
+                        url: vttUrl,
+                        size,
+                    })
                 }
-                const subWritable = await subHandle.createWritable()
-                try {
-                    await subBlob.stream().pipeTo(subWritable)
-                } catch (e) {
-                    subWritable.close()
-                    throw e
+            }
+
+            // 4. Summary (if present)
+            if (record.hasSummary) {
+                const summaryUrl = `/api/recordings/${encodeURIComponent(record.path)}/summary.md?download=true`
+                const size = await recordingApi.getContentLength(summaryUrl)
+                if (size != null && size > 0) {
+                    items.push({
+                        fileName: `${baseName}-summary.md`,
+                        url: summaryUrl,
+                        size,
+                    })
                 }
             }
         }
-        console.log('done')
+
+        const abortController = new AbortController()
+        this.downloadAbortController = abortController
+        const signal = abortController.signal
+
+        this.downloadTotalFiles = items.length
+        this.downloadCompletedFiles = 0
+        this.downloadLoadedBytes = 0
+        this.downloadTotalBytes = items.reduce((acc, item) => acc + item.size, 0)
+        this.downloadProgressValue = 0
+        this.downloadCurrentFile = items[0]?.fileName ?? ''
+        this.isDownloading = true
+
+        let loadedBytes = 0
+        let lastUpdateTime = 0
+        const PROGRESS_THROTTLE_MS = 100
+
+        const updateProgress = (force = false) => {
+            const now = performance.now()
+            if (force || now - lastUpdateTime >= PROGRESS_THROTTLE_MS) {
+                lastUpdateTime = now
+                this.downloadLoadedBytes = loadedBytes
+                if (this.downloadTotalBytes > 0) {
+                    this.downloadProgressValue = Math.min(1, loadedBytes / this.downloadTotalBytes)
+                }
+            }
+        }
+
+        try {
+            for (const item of items) {
+                if (signal.aborted) break
+
+                this.downloadCurrentFile = item.fileName
+                const stream = await recordingApi.getFileStream(item.url, signal)
+                if (signal.aborted) break
+                if (!stream) {
+                    throw new Error(`Failed to download file: ${item.fileName}`)
+                }
+
+                const fileHandle = await dirHandle.getFileHandle(item.fileName, { create: true })
+                const writableStream = await fileHandle.createWritable()
+
+                try {
+                    const countStream = new TransformStream<Uint8Array, Uint8Array>({
+                        transform: (chunk, controller) => {
+                            loadedBytes += chunk.byteLength
+                            updateProgress()
+                            controller.enqueue(chunk)
+                        },
+                    })
+
+                    await stream.pipeThrough(countStream).pipeTo(writableStream, { signal })
+                    updateProgress(true)
+                } catch (e) {
+                    try {
+                        await writableStream.abort()
+                    } catch {
+                        // ignore
+                    }
+                    if (signal.aborted) {
+                        break
+                    }
+                    throw e
+                }
+
+                this.downloadCompletedFiles++
+            }
+
+            if (!signal.aborted) {
+                updateProgress(true)
+                this.downloadProgressValue = 1
+                this.downloadLoadedBytes = this.downloadTotalBytes
+            }
+        } catch (e) {
+            console.error('Error during batch download:', e)
+            sendException(e, { exceptionSource: 'option.recordList.saveSelectedRecords' })
+            RecordList.showSaveError(e)
+        } finally {
+            this.isDownloading = false
+            this.downloadAbortController = null
+        }
     }
     private deleteSelectedRecords() {
         const dialogWrapper = document.getElementById('confirm-dialog') as Confirm
