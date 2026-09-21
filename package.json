@@ -43,7 +43,7 @@
     "@types/node": "^26.6.0",
     "@vitest/browser-playwright": "^5.0.0",
     "@vitest/coverage-v8": "^5.0.1",
-    "google-auth-library": "^11.0.2",
+    "google-auth-library": "^11.1.0",
     "marked": "^18.0.13",
     "oxfmt": "^0.68.0",
     "oxlint": "^1.83.0",
