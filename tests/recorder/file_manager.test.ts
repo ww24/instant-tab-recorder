@@ -32,7 +32,6 @@ beforeAll(() => {
             ...origStorage,
             storage: {
                 getDirectory: vi.fn().mockResolvedValue(mockDirHandle),
-                persisted: vi.fn().mockResolvedValue(true),
             },
         },
         configurable: true,

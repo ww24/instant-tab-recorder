@@ -43,10 +43,6 @@ export function setupTransformersEnv(options: SetupTransformersEnvOptions): OPFS
     env.useBrowserCache = false
     env.useFSCache = false
 
-    if (typeof navigator !== 'undefined' && navigator.storage?.persist) {
-        navigator.storage.persist().catch(() => {})
-    }
-
     if (options.ortWasmUrl && env.backends?.onnx?.wasm) {
         env.backends.onnx.wasm.wasmPaths = {
             wasm: resolveWasmUrl(options.ortWasmUrl),

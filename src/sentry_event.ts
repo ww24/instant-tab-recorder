@@ -24,9 +24,6 @@ export interface StartRecordingEvent {
     type: 'start_recording'
     tags: {
         trigger: StartTrigger
-        state: {
-            opfsPersisted: boolean
-        }
     }
 }
 

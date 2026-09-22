@@ -117,7 +117,6 @@ const handler = new OffscreenHandler({
     getConfiguration: () => Settings.getConfiguration(),
     mergeRemoteConfiguration: remote => Settings.mergeRemoteConfiguration(remote),
     session,
-    checkStoragePersisted: () => navigator.storage.persisted(),
     sendEvent,
     sendException,
     flush,
