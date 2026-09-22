@@ -501,6 +501,29 @@ describe('Configuration.transcription', () => {
         expect(migrated).toBe(true)
         expect(config.summary.prompt).toBe(DEFAULT_SUMMARY_PROMPT)
     })
+
+    it('should migrate legacy microphone config without noiseSuppression, echoCancellation or autoGainControl', () => {
+        const config = new Configuration()
+        ;(config.microphone as any).noiseSuppression = undefined
+        ;(config.microphone as any).echoCancellation = undefined
+        ;(config.microphone as any).autoGainControl = undefined
+        const migrated = Configuration.migrate(config, {})
+        expect(migrated).toBe(true)
+        expect(config.microphone.noiseSuppression).toBe(true)
+        expect(config.microphone.echoCancellation).toBe(true)
+        expect(config.microphone.autoGainControl).toBe(false)
+    })
+
+    it('should correctly determine isSyncTarget', () => {
+        expect(Configuration.isSyncTarget('microphone')).toBe(false)
+        expect(Configuration.isSyncTarget('cropping')).toBe(false)
+        expect(Configuration.isSyncTarget('transcription')).toBe(false)
+        expect(Configuration.isSyncTarget('summary')).toBe(false)
+        expect(Configuration.isSyncTarget('videoFormat')).toBe(true)
+        expect(Configuration.isSyncTarget('windowSize')).toBe(true)
+        expect(Configuration.isSyncTarget('openOptionPage')).toBe(true)
+        expect(Configuration.isSyncTarget('recordingTimer')).toBe(true)
+    })
 })
 
 describe('resolveBitrate', () => {

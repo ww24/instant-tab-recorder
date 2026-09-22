@@ -158,7 +158,14 @@ describe('start-recording', () => {
 
     it('calls session.start with correct config assembled from deps', async () => {
         const config = new Configuration()
-        config.microphone = { enabled: true, gain: 0.8, deviceId: 'mic-1' }
+        config.microphone = {
+            enabled: true,
+            gain: 0.8,
+            deviceId: 'mic-1',
+            noiseSuppression: true,
+            echoCancellation: true,
+            autoGainControl: false,
+        }
         config.cropping = { enabled: true, region: { x: 10, y: 20, width: 640, height: 480 } }
         config.muteRecordingTab = true
         config.audioSeparation = { enabled: true }

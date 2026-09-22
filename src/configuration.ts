@@ -244,6 +244,9 @@ export interface Microphone {
     enabled: boolean
     gain: number
     deviceId: string | null // null = default device, string = specific device ID
+    noiseSuppression: boolean
+    echoCancellation: boolean
+    autoGainControl: boolean
 }
 export interface AudioSeparation {
     enabled: boolean
@@ -286,8 +289,16 @@ export function isAudioOnly(mode: VideoRecordingMode): boolean {
     return mode === 'audio-only'
 }
 
+// Configuration keys excluded from sync storage (device-specific settings)
+export const NON_SYNC_KEYS = ['microphone', 'cropping', 'transcription', 'summary'] as const
+export type NonSyncKey = (typeof NON_SYNC_KEYS)[number]
+
+export function isSyncTarget(key: string): boolean {
+    return !NON_SYNC_KEYS.includes(key as NonSyncKey)
+}
+
 // Configuration type for sync storage (excludes device-specific settings)
-export type SyncConfiguration = Omit<Configuration, 'microphone' | 'cropping' | 'transcription' | 'summary'>
+export type SyncConfiguration = Omit<Configuration, NonSyncKey>
 
 /**
  * Resolve the container format for separated audio files.
@@ -384,6 +395,9 @@ export class Configuration {
             enabled: false,
             gain: 1.0,
             deviceId: null,
+            noiseSuppression: true,
+            echoCancellation: true,
+            autoGainControl: false,
         }
         this.cropping = {
             enabled: false,
@@ -457,7 +471,13 @@ export class Configuration {
             videoFormat,
             openOptionPage,
             muteRecordingTab,
-            microphone: { enabled: microphone.enabled, gain: microphone.gain },
+            microphone: {
+                enabled: microphone.enabled,
+                gain: microphone.gain,
+                noiseSuppression: microphone.noiseSuppression,
+                echoCancellation: microphone.echoCancellation,
+                autoGainControl: microphone.autoGainControl,
+            },
             cropping: {
                 enabled: cropping.enabled,
                 region: { width: cropping.region.width, height: cropping.region.height },
@@ -469,6 +489,9 @@ export class Configuration {
             transcription: { ...transcription },
             summary: { enabled: summary.enabled },
         }
+    }
+    static isSyncTarget(key: string): boolean {
+        return isSyncTarget(key)
     }
     static screenRecordingSize(screenRecordingSize: ScreenRecordingSize, base: Resolution): Resolution {
         if (screenRecordingSize.auto && base.width > 0 && base.height > 0) {
@@ -526,6 +549,22 @@ export class Configuration {
         if (config.summary && typeof config.summary.prompt !== 'string') {
             config.summary.prompt = DEFAULT_SUMMARY_PROMPT
             migrated = true
+        }
+
+        // Migrate: ensure microphone noiseSuppression, echoCancellation and autoGainControl have default values
+        if (config.microphone) {
+            if (typeof config.microphone.noiseSuppression !== 'boolean') {
+                config.microphone.noiseSuppression = true
+                migrated = true
+            }
+            if (typeof config.microphone.echoCancellation !== 'boolean') {
+                config.microphone.echoCancellation = true
+                migrated = true
+            }
+            if (typeof config.microphone.autoGainControl !== 'boolean') {
+                config.microphone.autoGainControl = false
+                migrated = true
+            }
         }
 
         return migrated

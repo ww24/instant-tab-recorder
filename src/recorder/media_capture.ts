@@ -52,9 +52,9 @@ export class MediaCapture {
         try {
             return await this.devices.getUserMedia({
                 audio: {
-                    echoCancellation: true,
-                    noiseSuppression: true,
-                    autoGainControl: false,
+                    echoCancellation: microphone.echoCancellation ?? true,
+                    noiseSuppression: microphone.noiseSuppression ?? true,
+                    autoGainControl: microphone.autoGainControl ?? false,
                     sampleRate: audioSampleRate,
                     ...(microphone.deviceId && microphone.deviceId !== 'default'
                         ? { deviceId: { exact: microphone.deviceId } }

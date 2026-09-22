@@ -274,6 +274,24 @@
     "settingsDefaultDevice": {
         "message": "デフォルトデバイス"
     },
+    "settingsMicNoiseSuppression": {
+        "message": "ノイズ抑制 (NS)"
+    },
+    "settingsMicNoiseSuppressionHint": {
+        "message": "ループバックオーディオや楽器演奏に使用する場合は無効にしてください。"
+    },
+    "settingsMicEchoCancellation": {
+        "message": "エコー除去 (AEC)"
+    },
+    "settingsMicEchoCancellationHint": {
+        "message": "ループバックオーディオを使用する場合は無効にしてください。"
+    },
+    "settingsMicAutoGainControl": {
+        "message": "音量自動調整 (AGC)"
+    },
+    "settingsMicAutoGainControlHint": {
+        "message": "有効にすると音量は自動調整され、手動音量設定は無効化されます。"
+    },
     "settingsMicVolume": {
         "message": "マイク音量: x$GAIN$",
         "placeholders": {
@@ -281,6 +299,9 @@
                 "content": "$1"
             }
         }
+    },
+    "settingsMicInputLevel": {
+        "message": "入力レベル"
     },
     "settingsAudioSeparation": {
         "message": "音声分離"

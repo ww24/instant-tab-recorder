@@ -158,7 +158,14 @@ function createDefaultConfig(overrides: Partial<RecordingConfig> = {}): Recordin
             30,
         ),
         recordingSize: { width: 1920, height: 1080 },
-        microphone: { enabled: true, gain: 1.0, deviceId: null },
+        microphone: {
+            enabled: true,
+            gain: 1.0,
+            deviceId: null,
+            noiseSuppression: true,
+            echoCancellation: true,
+            autoGainControl: false,
+        },
         cropping: { enabled: false, region: { x: 0, y: 0, width: 1920, height: 1080 } },
         muteRecordingTab: false,
         audioSeparation: { enabled: false },
@@ -244,6 +251,22 @@ describe('RecordingSession', () => {
             await session.start(defaultRequest, config)
 
             expect(audioMixer.mix).toHaveBeenCalled()
+        })
+
+        test('mixes audio streams with 1.0 gain when autoGainControl is enabled', async () => {
+            const config = createDefaultConfig({
+                microphone: {
+                    enabled: true,
+                    gain: 3.5,
+                    deviceId: null,
+                    noiseSuppression: true,
+                    echoCancellation: true,
+                    autoGainControl: true,
+                },
+            })
+            await session.start(defaultRequest, config)
+
+            expect(audioMixer.mix).toHaveBeenCalledWith(expect.anything(), expect.anything(), 1.0, expect.anything())
         })
 
         test('sets up playback when not muted and has audio tracks', async () => {
