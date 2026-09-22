@@ -361,6 +361,30 @@
         "message": "Default device",
         "description": "Default microphone device option"
     },
+    "settingsMicNoiseSuppression": {
+        "message": "Noise suppression (NS)",
+        "description": "Toggle label for noise suppression"
+    },
+    "settingsMicNoiseSuppressionHint": {
+        "message": "Disable when using audio loopback devices or musical instruments.",
+        "description": "Hint for noise suppression toggle"
+    },
+    "settingsMicEchoCancellation": {
+        "message": "Acoustic echo cancellation (AEC)",
+        "description": "Toggle label for echo cancellation"
+    },
+    "settingsMicEchoCancellationHint": {
+        "message": "Disable when using audio loopback devices.",
+        "description": "Hint for echo cancellation toggle"
+    },
+    "settingsMicAutoGainControl": {
+        "message": "Auto gain control (AGC)",
+        "description": "Toggle label for auto gain control"
+    },
+    "settingsMicAutoGainControlHint": {
+        "message": "When enabled, microphone volume is adjusted automatically and manual volume control is disabled.",
+        "description": "Hint for auto gain control toggle"
+    },
     "settingsMicVolume": {
         "message": "Microphone volume: x$GAIN$",
         "description": "Label for microphone volume slider",
@@ -370,6 +394,10 @@
                 "example": "1.0"
             }
         }
+    },
+    "settingsMicInputLevel": {
+        "message": "Input level",
+        "description": "Label for microphone input level meter"
     },
     "settingsAudioSeparation": {
         "message": "Audio Separation",

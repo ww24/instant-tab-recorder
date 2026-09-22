@@ -880,7 +880,7 @@ describe('extension-settings', () => {
         expect(mockClear).toHaveBeenCalledWith('summary-model-cache')
     })
 
-    test('enables summary and syncs configuration on summary-model-download-complete when not cancelling', async () => {
+    test('enables summary on summary-model-download-complete when not cancelling', async () => {
         const config = Settings.getConfiguration()
         config.summary.enabled = false
         Settings.setConfiguration(config)
@@ -902,7 +902,7 @@ describe('extension-settings', () => {
         expect(el.hasSummaryCacheInconsistency).toBe(false)
         expect(el.config.summary.enabled).toBe(true)
         expect(Settings.getConfiguration().summary.enabled).toBe(true)
-        expect(chrome.runtime.sendMessage).toHaveBeenCalledWith(
+        expect(chrome.runtime.sendMessage).not.toHaveBeenCalledWith(
             expect.objectContaining({
                 type: 'save-config-sync',
             }),
@@ -935,7 +935,7 @@ describe('extension-settings', () => {
         expect(mockClear).toHaveBeenCalledWith('transcription-model-cache')
     })
 
-    test('enables transcription and syncs configuration on model-download-complete when not cancelling', async () => {
+    test('enables transcription on model-download-complete when not cancelling', async () => {
         const config = Settings.getConfiguration()
         config.transcription.enabled = false
         Settings.setConfiguration(config)
@@ -957,7 +957,7 @@ describe('extension-settings', () => {
         expect(el.hasTranscriptionCacheInconsistency).toBe(false)
         expect(el.config.transcription.enabled).toBe(true)
         expect(Settings.getConfiguration().transcription.enabled).toBe(true)
-        expect(chrome.runtime.sendMessage).toHaveBeenCalledWith(
+        expect(chrome.runtime.sendMessage).not.toHaveBeenCalledWith(
             expect.objectContaining({
                 type: 'save-config-sync',
             }),
@@ -1300,6 +1300,378 @@ describe('extension-settings', () => {
                     }),
                 }),
             )
+        })
+    })
+
+    describe('microphone settings integration', () => {
+        test('renders mic-settings element when microphone is enabled', async () => {
+            const config = Settings.getConfiguration()
+            config.microphone.enabled = true
+            Settings.setConfiguration(config)
+
+            const screen = render(html`<extension-settings></extension-settings>`)
+            const el = screen.container.querySelector('extension-settings')!
+            await elementUpdated(el)
+
+            const micSettings = shadowQuery(el, 'mic-settings')
+            expect(micSettings).not.toBeNull()
+        })
+
+        test('does not render mic-settings when microphone is disabled', async () => {
+            const config = Settings.getConfiguration()
+            config.microphone.enabled = false
+            Settings.setConfiguration(config)
+
+            const screen = render(html`<extension-settings></extension-settings>`)
+            const el = screen.container.querySelector('extension-settings')!
+            await elementUpdated(el)
+
+            const micSettings = shadowQuery(el, 'mic-settings')
+            expect(micSettings).toBeNull()
+        })
+
+        test('renders mic-settings when microphone switch is toggled ON', async () => {
+            const config = Settings.getConfiguration()
+            config.microphone.enabled = false
+            Settings.setConfiguration(config)
+
+            const screen = render(html`<extension-settings></extension-settings>`)
+            const el = screen.container.querySelector('extension-settings') as any
+            await el.ready
+            await elementUpdated(el)
+
+            expect(shadowQuery(el, 'mic-settings')).toBeNull()
+
+            const micHeading = shadowQueryAll(el, 'h2').find(h => h.textContent?.trim() === 'Microphone')
+            const micSection = micHeading?.closest('.settings-section')
+            const micSwitch = micSection?.querySelector('md-switch') as any
+            expect(micSwitch).not.toBeNull()
+
+            micSwitch.selected = true
+            micSwitch.dispatchEvent(new Event('input'))
+            await elementUpdated(el)
+
+            expect(shadowQuery(el, 'mic-settings')).not.toBeNull()
+        })
+
+        test('removes mic-settings when microphone switch is toggled OFF', async () => {
+            const config = Settings.getConfiguration()
+            config.microphone.enabled = true
+            Settings.setConfiguration(config)
+
+            const screen = render(html`<extension-settings></extension-settings>`)
+            const el = screen.container.querySelector('extension-settings') as any
+            await el.ready
+            await elementUpdated(el)
+
+            expect(shadowQuery(el, 'mic-settings')).not.toBeNull()
+
+            const micHeading = shadowQueryAll(el, 'h2').find(h => h.textContent?.trim() === 'Microphone')
+            const micSection = micHeading?.closest('.settings-section')
+            const micSwitch = micSection?.querySelector('md-switch') as any
+            expect(micSwitch).not.toBeNull()
+
+            micSwitch.selected = false
+            micSwitch.dispatchEvent(new Event('input'))
+            await elementUpdated(el)
+
+            expect(shadowQuery(el, 'mic-settings')).toBeNull()
+        })
+
+        test('updates configuration when gain-change event is dispatched from mic-settings', async () => {
+            const config = Settings.getConfiguration()
+            config.microphone.enabled = true
+            Settings.setConfiguration(config)
+
+            const screen = render(html`<extension-settings></extension-settings>`)
+            const el = screen.container.querySelector('extension-settings') as any
+            await el.ready
+            await elementUpdated(el)
+
+            const micSettings = shadowQuery(el, 'mic-settings') as any
+            expect(micSettings).not.toBeNull()
+
+            micSettings.dispatchEvent(
+                new CustomEvent('gain-change', {
+                    detail: { gain: 3.5 },
+                    bubbles: true,
+                    composed: true,
+                }),
+            )
+
+            expect(el.config.microphone.gain).toBe(3.5)
+            expect(Settings.getConfiguration().microphone.gain).toBe(3.5)
+        })
+
+        test('updates configuration when device-change event is dispatched from mic-settings', async () => {
+            const config = Settings.getConfiguration()
+            config.microphone.enabled = true
+            Settings.setConfiguration(config)
+
+            const screen = render(html`<extension-settings></extension-settings>`)
+            const el = screen.container.querySelector('extension-settings') as any
+            await el.ready
+            await elementUpdated(el)
+
+            const micSettings = shadowQuery(el, 'mic-settings') as any
+            expect(micSettings).not.toBeNull()
+
+            micSettings.dispatchEvent(
+                new CustomEvent('device-change', {
+                    detail: { deviceId: 'test-mic-device' },
+                    bubbles: true,
+                    composed: true,
+                }),
+            )
+
+            expect(el.config.microphone.deviceId).toBe('test-mic-device')
+            expect(Settings.getConfiguration().microphone.deviceId).toBe('test-mic-device')
+        })
+
+        test('updates configuration when noise-suppression-change event is dispatched without calling syncConfiguration', async () => {
+            const config = Settings.getConfiguration()
+            config.microphone.enabled = true
+            config.microphone.noiseSuppression = true
+            Settings.setConfiguration(config)
+
+            const syncSpy = vi.spyOn(Settings, 'syncConfiguration')
+
+            const screen = render(html`<extension-settings></extension-settings>`)
+            const el = screen.container.querySelector('extension-settings') as any
+            await el.ready
+            await elementUpdated(el)
+            syncSpy.mockClear()
+
+            const micSettings = shadowQuery(el, 'mic-settings') as any
+            expect(micSettings).not.toBeNull()
+
+            micSettings.dispatchEvent(
+                new CustomEvent('noise-suppression-change', {
+                    detail: { noiseSuppression: false },
+                    bubbles: true,
+                    composed: true,
+                }),
+            )
+
+            expect(el.config.microphone.noiseSuppression).toBe(false)
+            expect(Settings.getConfiguration().microphone.noiseSuppression).toBe(false)
+            expect(syncSpy).not.toHaveBeenCalled()
+            syncSpy.mockRestore()
+        })
+
+        test('updates configuration when echo-cancellation-change event is dispatched without calling syncConfiguration', async () => {
+            const config = Settings.getConfiguration()
+            config.microphone.enabled = true
+            config.microphone.echoCancellation = true
+            Settings.setConfiguration(config)
+
+            const syncSpy = vi.spyOn(Settings, 'syncConfiguration')
+
+            const screen = render(html`<extension-settings></extension-settings>`)
+            const el = screen.container.querySelector('extension-settings') as any
+            await el.ready
+            await elementUpdated(el)
+            syncSpy.mockClear()
+
+            const micSettings = shadowQuery(el, 'mic-settings') as any
+            expect(micSettings).not.toBeNull()
+
+            micSettings.dispatchEvent(
+                new CustomEvent('echo-cancellation-change', {
+                    detail: { echoCancellation: false },
+                    bubbles: true,
+                    composed: true,
+                }),
+            )
+
+            expect(el.config.microphone.echoCancellation).toBe(false)
+            expect(Settings.getConfiguration().microphone.echoCancellation).toBe(false)
+            expect(syncSpy).not.toHaveBeenCalled()
+            syncSpy.mockRestore()
+        })
+
+        test('updates configuration when auto-gain-control-change event is dispatched without calling syncConfiguration', async () => {
+            const config = Settings.getConfiguration()
+            config.microphone.enabled = true
+            config.microphone.autoGainControl = false
+            Settings.setConfiguration(config)
+
+            const syncSpy = vi.spyOn(Settings, 'syncConfiguration')
+
+            const screen = render(html`<extension-settings></extension-settings>`)
+            const el = screen.container.querySelector('extension-settings') as any
+            await el.ready
+            await elementUpdated(el)
+            syncSpy.mockClear()
+
+            const micSettings = shadowQuery(el, 'mic-settings') as any
+            expect(micSettings).not.toBeNull()
+
+            micSettings.dispatchEvent(
+                new CustomEvent('auto-gain-control-change', {
+                    detail: { autoGainControl: true },
+                    bubbles: true,
+                    composed: true,
+                }),
+            )
+
+            expect(el.config.microphone.autoGainControl).toBe(true)
+            expect(Settings.getConfiguration().microphone.autoGainControl).toBe(true)
+            expect(syncSpy).not.toHaveBeenCalled()
+            syncSpy.mockRestore()
+        })
+
+        test('does not call syncConfiguration when gain-change event is dispatched', async () => {
+            const config = Settings.getConfiguration()
+            config.microphone.enabled = true
+            Settings.setConfiguration(config)
+
+            const syncSpy = vi.spyOn(Settings, 'syncConfiguration')
+
+            const screen = render(html`<extension-settings></extension-settings>`)
+            const el = screen.container.querySelector('extension-settings') as any
+            await el.ready
+            await elementUpdated(el)
+            syncSpy.mockClear()
+
+            const micSettings = shadowQuery(el, 'mic-settings') as any
+            expect(micSettings).not.toBeNull()
+
+            micSettings.dispatchEvent(
+                new CustomEvent('gain-change', {
+                    detail: { gain: 2.0 },
+                    bubbles: true,
+                    composed: true,
+                }),
+            )
+
+            expect(el.config.microphone.gain).toBe(2.0)
+            expect(syncSpy).not.toHaveBeenCalled()
+            syncSpy.mockRestore()
+        })
+
+        test('does not call syncConfiguration when microphone toggle is clicked', async () => {
+            const config = Settings.getConfiguration()
+            config.microphone.enabled = false
+            Settings.setConfiguration(config)
+
+            const syncSpy = vi.spyOn(Settings, 'syncConfiguration')
+
+            const screen = render(html`<extension-settings></extension-settings>`)
+            const el = screen.container.querySelector('extension-settings') as any
+            await el.ready
+            await elementUpdated(el)
+            syncSpy.mockClear()
+
+            const micHeading = shadowQueryAll(el, 'h2').find(h => h.textContent?.trim() === 'Microphone')
+            const micSection = micHeading?.closest('.settings-section')
+            const micSwitch = micSection?.querySelector('md-switch') as any
+            expect(micSwitch).not.toBeNull()
+
+            micSwitch.selected = true
+            micSwitch.dispatchEvent(new Event('input'))
+            await elementUpdated(el)
+
+            expect(syncSpy).not.toHaveBeenCalled()
+            syncSpy.mockRestore()
+        })
+
+        test('propagates setTabActive(false) to mic-settings', async () => {
+            const config = Settings.getConfiguration()
+            config.microphone.enabled = true
+            Settings.setConfiguration(config)
+
+            const screen = render(html`<extension-settings></extension-settings>`)
+            const el = screen.container.querySelector('extension-settings') as any
+            await el.ready
+            await elementUpdated(el)
+
+            const micSettings = shadowQuery(el, 'mic-settings') as any
+            expect(micSettings).not.toBeNull()
+
+            const setTabActiveSpy = vi.spyOn(micSettings, 'setTabActive')
+            await el.setTabActive(false)
+
+            expect(setTabActiveSpy).toHaveBeenCalledWith(false)
+        })
+
+        test('does not start mic level meter on initial render when microphone is already enabled', async () => {
+            const config = Settings.getConfiguration()
+            config.microphone.enabled = true
+            Settings.setConfiguration(config)
+
+            const screen = render(html`<extension-settings></extension-settings>`)
+            const el = screen.container.querySelector('extension-settings') as any
+            await el.ready
+            await elementUpdated(el)
+
+            const micSettings = shadowQuery(el, 'mic-settings') as any
+            expect(micSettings).not.toBeNull()
+            expect(micSettings.micMeterActive).toBe(false)
+        })
+
+        test('calls startMicLevelMeter on mic-settings when microphone switch is toggled ON', async () => {
+            const config = Settings.getConfiguration()
+            config.microphone.enabled = false
+            Settings.setConfiguration(config)
+
+            const screen = render(html`<extension-settings></extension-settings>`)
+            const el = screen.container.querySelector('extension-settings') as any
+            await el.ready
+            await elementUpdated(el)
+
+            const micHeading = shadowQueryAll(el, 'h2').find(h => h.textContent?.trim() === 'Microphone')
+            const micSection = micHeading?.closest('.settings-section')
+            const micSwitch = micSection?.querySelector('md-switch') as any
+            expect(micSwitch).not.toBeNull()
+
+            micSwitch.selected = true
+            micSwitch.dispatchEvent(new Event('input'))
+            await elementUpdated(el)
+
+            const micSettings = shadowQuery(el, 'mic-settings') as any
+            expect(micSettings).not.toBeNull()
+            // startMicLevelMeter is invoked asynchronously via updateComplete
+            await vi.waitFor(() => {
+                expect(micSettings.micMeterGeneration).toBeGreaterThan(0)
+            })
+        })
+    })
+
+    describe('Settings.syncConfiguration', () => {
+        test('does not send duplicate message when sync succeeds and called with identical configuration', async () => {
+            const config = new Configuration()
+            config.windowSize = { width: 1111, height: 2222 }
+            const sendSpy = vi.spyOn(chrome.runtime, 'sendMessage').mockResolvedValue(undefined as any)
+
+            await Settings.syncConfiguration(config)
+            expect(sendSpy).toHaveBeenCalledTimes(1)
+
+            // Second call with same configuration should be skipped
+            await Settings.syncConfiguration(config)
+            expect(sendSpy).toHaveBeenCalledTimes(1)
+
+            sendSpy.mockRestore()
+        })
+
+        test('allows retry when sendMessage fails', async () => {
+            const config = new Configuration()
+            config.windowSize = { width: 3333, height: 4444 }
+
+            const sendSpy = vi
+                .spyOn(chrome.runtime, 'sendMessage')
+                .mockRejectedValueOnce(new Error('Service worker error'))
+                .mockResolvedValueOnce(undefined as any)
+
+            // First attempt fails
+            await expect(Settings.syncConfiguration(config)).rejects.toThrow('Service worker error')
+            expect(sendSpy).toHaveBeenCalledTimes(1)
+
+            // Retry attempt with same configuration should succeed and not be blocked by cache
+            await expect(Settings.syncConfiguration(config)).resolves.toBeUndefined()
+            expect(sendSpy).toHaveBeenCalledTimes(2)
+
+            sendSpy.mockRestore()
         })
     })
 })

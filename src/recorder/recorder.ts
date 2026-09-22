@@ -1,5 +1,5 @@
 import { canEncodeAudio, type Output } from 'mediabunny'
-import type { VideoFormat, CropRegion } from '../configuration'
+import type { VideoFormat, CropRegion, Microphone } from '../configuration'
 import { hasVideo, hasAudio } from '../configuration'
 import type { StartRecording, StartRecordingResponse } from '../message'
 import type { Preview } from '../preview'
@@ -20,7 +20,7 @@ export type RecorderState = 'idle' | 'starting' | 'recording' | 'paused'
 export interface RecordingConfig {
     videoFormat: VideoFormat
     recordingSize: { width: number; height: number }
-    microphone: { enabled: boolean; gain: number; deviceId: string | null }
+    microphone: Microphone
     cropping: { enabled: boolean; region: CropRegion }
     muteRecordingTab: boolean
     audioSeparation: { enabled: boolean }
@@ -108,7 +108,8 @@ export class RecordingSession implements OffscreenSession {
             const micStream = await this.mediaCapture.captureMicrophone(microphone, videoFormat.audioSampleRate)
 
             // Mix audio streams
-            let media = this.audioMixer.mix(tabMedia, micStream, microphone.gain, videoFormat.audioSampleRate)
+            const micGain = microphone.autoGainControl ? 1.0 : microphone.gain
+            let media = this.audioMixer.mix(tabMedia, micStream, micGain, videoFormat.audioSampleRate)
 
             // Store video track for preview
             const videoTracks = tabMedia.getVideoTracks()

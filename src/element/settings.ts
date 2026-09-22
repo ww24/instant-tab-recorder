@@ -10,8 +10,8 @@ import '@material/web/progress/linear-progress'
 import { MdFilledSelect } from '@material/web/select/filled-select'
 import { MdFilledTextField } from '@material/web/textfield/filled-text-field'
 import { MdSwitch } from '@material/web/switch/switch'
-import { MdSlider } from '@material/web/slider/slider'
-import type { MdDialog } from '@material/web/dialog/dialog'
+import './micSettings'
+import type { MicSettings } from './micSettings'
 import type { ResizeWindowMessage, SaveConfigSyncMessage, UpdateRecordingTimerMessage, Message } from '../message'
 import {
     Configuration,
@@ -36,8 +36,7 @@ import type { ContainerFormat, VideoCodecType, AudioCodecType } from '../configu
 import { canEncodeVideo, canEncodeAudio } from 'mediabunny'
 import { WebLocalStorage } from '../storage'
 import type { FetchConfigMessage } from '../message'
-import { deepMerge, formatNum } from './util'
-import Alert from './alert'
+import { deepMerge } from './util'
 import { applyTheme } from '../theme'
 import { t } from '../i18n'
 import { switchLabelStyle } from './switchStyle'
@@ -115,12 +114,20 @@ export class Settings extends LitElement {
         Settings.setConfiguration(config)
     }
 
+    private static lastSyncedDataString: string | null = null
+
     public static async syncConfiguration(config: Configuration) {
+        const filtered = Configuration.filterForSync(config)
+        const serialized = JSON.stringify(filtered)
+        if (serialized === Settings.lastSyncedDataString) {
+            return
+        }
         const msg: SaveConfigSyncMessage = {
             type: 'save-config-sync',
-            data: Configuration.filterForSync(config),
+            data: filtered,
         }
         await chrome.runtime.sendMessage(msg)
+        Settings.lastSyncedDataString = serialized
     }
 
     public static getRecordingInfo(base: Resolution): RecordingInfo {
@@ -178,16 +185,6 @@ export class Settings extends LitElement {
                 font-size: 0.8rem;
                 color: var(--theme-text-secondary, #666);
                 margin-bottom: 1rem;
-            }
-            .mic-status {
-                margin-bottom: 0.5rem;
-                font-size: 0.9rem;
-            }
-            .mic-status.granted {
-                color: var(--theme-success, #4caf50);
-            }
-            .mic-status.required {
-                color: var(--theme-error, #f44336);
             }
             .field-label {
                 font-size: 0.9rem;
@@ -275,12 +272,6 @@ export class Settings extends LitElement {
     }
 
     @property()
-    private microphonePermissionGranted: boolean = false
-
-    @property()
-    private availableMicrophones: MediaDeviceInfo[] = []
-
-    @property()
     private encodeErrors: string[] = []
 
     private readonly transcriptionModelCache = new OPFSModelCache(
@@ -343,11 +334,12 @@ export class Settings extends LitElement {
 
     private timerEstimateIntervalId: ReturnType<typeof setInterval> | null = null
 
+    private isTabActive: boolean = true
+
     public constructor() {
         super()
         this.config = Settings.getConfiguration()
         applyTheme(this.config.uiTheme)
-        this.updateMicPermission()
         this.updateTimerEstimate()
     }
 
@@ -388,6 +380,36 @@ export class Settings extends LitElement {
             Settings.setConfiguration(this.config)
             this.requestUpdate('config')
         }
+    }
+
+    private handleMicGainChange(e: CustomEvent<{ gain: number }>) {
+        this.config.microphone.gain = e.detail.gain
+        Settings.setConfiguration(this.config)
+        this.requestUpdate('config')
+    }
+
+    private handleMicDeviceChange(e: CustomEvent<{ deviceId: string | null }>) {
+        this.config.microphone.deviceId = e.detail.deviceId
+        Settings.setConfiguration(this.config)
+        this.requestUpdate('config')
+    }
+
+    private handleMicNoiseSuppressionChange(e: CustomEvent<{ noiseSuppression: boolean }>) {
+        this.config.microphone.noiseSuppression = e.detail.noiseSuppression
+        Settings.setConfiguration(this.config)
+        this.requestUpdate('config')
+    }
+
+    private handleMicEchoCancellationChange(e: CustomEvent<{ echoCancellation: boolean }>) {
+        this.config.microphone.echoCancellation = e.detail.echoCancellation
+        Settings.setConfiguration(this.config)
+        this.requestUpdate('config')
+    }
+
+    private handleMicAutoGainControlChange(e: CustomEvent<{ autoGainControl: boolean }>) {
+        this.config.microphone.autoGainControl = e.detail.autoGainControl
+        Settings.setConfiguration(this.config)
+        this.requestUpdate('config')
     }
 
     public override render() {
@@ -666,57 +688,18 @@ export class Settings extends LitElement {
                     ${
                         this.config.microphone.enabled
                             ? html`
-                                  <div class="mic-status ${this.microphonePermissionGranted ? 'granted' : 'required'}">
-                                      ${t(
-                                          'settingsMicStatus',
-                                          this.microphonePermissionGranted
-                                              ? t('settingsPermissionGranted')
-                                              : t('settingsPermissionRequired'),
-                                      )}
-                                  </div>
-                                  ${
-                                      this.availableMicrophones.length > 0
-                                          ? html`
-                                                <div>
-                                                    <label for="mic-device" class="field-label"
-                                                        >${t('settingsMicDevice')}</label
-                                                    >
-                                                    <md-filled-select
-                                                        id="mic-device"
-                                                        .value=${this.config.microphone.deviceId ?? 'default'}
-                                                        @input=${this.updateProp('microphone', 'deviceId')}>
-                                                        <md-select-option value="default">
-                                                            <div slot="headline">${t('settingsDefaultDevice')}</div>
-                                                        </md-select-option>
-                                                        ${this.availableMicrophones.map(
-                                                            device => html`
-                                                                <md-select-option value=${device.deviceId}>
-                                                                    <div slot="headline">
-                                                                        ${
-                                                                            device.label ??
-                                                                            `Microphone ${device.deviceId.slice(0, 8)}...`
-                                                                        }
-                                                                    </div>
-                                                                </md-select-option>
-                                                            `,
-                                                        )}
-                                                    </md-filled-select>
-                                                </div>
-                                            `
-                                          : ''
-                                  }
-                                  <div>
-                                      <label for="mic-gain" class="field-label">
-                                          ${t('settingsMicVolume', formatNum(this.config.microphone.gain, 1))}
-                                      </label>
-                                      <md-slider
-                                          id="mic-gain"
-                                          min="0"
-                                          max="10"
-                                          step="0.1"
-                                          .value=${live(this.config.microphone.gain)}
-                                          @input=${this.updateProp('microphone', 'gain')}></md-slider>
-                                  </div>
+                                  <mic-settings
+                                      .gain=${this.config.microphone.gain}
+                                      .deviceId=${this.config.microphone.deviceId}
+                                      .noiseSuppression=${this.config.microphone.noiseSuppression ?? true}
+                                      .echoCancellation=${this.config.microphone.echoCancellation ?? true}
+                                      .autoGainControl=${this.config.microphone.autoGainControl ?? false}
+                                      ?tab-active=${this.isTabActive}
+                                      @gain-change=${this.handleMicGainChange}
+                                      @device-change=${this.handleMicDeviceChange}
+                                      @noise-suppression-change=${this.handleMicNoiseSuppressionChange}
+                                      @echo-cancellation-change=${this.handleMicEchoCancellationChange}
+                                      @auto-gain-control-change=${this.handleMicAutoGainControlChange}></mic-settings>
                               `
                             : ''
                     }
@@ -1083,18 +1066,6 @@ export class Settings extends LitElement {
                         case 'enabled':
                             if (!(e.target instanceof MdSwitch)) return
                             this.config[key1][key2] = e.target.selected
-                            // Auto-test microphone permission when enabled
-                            if (e.target.selected) {
-                                this.testMicrophonePermission()
-                            }
-                            break
-                        case 'gain':
-                            if (!(e.target instanceof MdSlider)) return
-                            this.config[key1][key2] = e.target.value ?? 0
-                            break
-                        case 'deviceId':
-                            if (!(e.target instanceof MdFilledSelect)) return
-                            this.config[key1][key2] = e.target.value === 'default' ? null : e.target.value
                             break
                     }
                     break
@@ -1164,7 +1135,9 @@ export class Settings extends LitElement {
 
             this.requestUpdate('config', oldVal)
             Settings.setConfiguration(this.config)
-            await Settings.syncConfiguration(this.config)
+            if (Configuration.isSyncTarget(key1)) {
+                await Settings.syncConfiguration(this.config)
+            }
 
             if (key1 === 'recordingTimer' && (key2 === 'enabled' || key2 === 'durationMinutes')) {
                 const msg: UpdateRecordingTimerMessage = {
@@ -1177,6 +1150,12 @@ export class Settings extends LitElement {
 
             if (key1 === 'videoFormat' || (key1 === 'microphone' && key2 === 'enabled')) {
                 await this.validateEncoding()
+            }
+
+            if (key1 === 'microphone' && key2 === 'enabled' && this.config.microphone.enabled) {
+                await this.updateComplete
+                const micSettings = this.shadowRoot?.querySelector<MicSettings>('mic-settings')
+                void micSettings?.startMicLevelMeter()
             }
         }
     }
@@ -1366,45 +1345,6 @@ export class Settings extends LitElement {
         return names[codec] ?? codec
     }
 
-    private async updateMicPermission() {
-        const permission = await navigator.permissions.query({ name: 'microphone' })
-        const update = async () => {
-            if (permission.state !== 'granted') {
-                this.microphonePermissionGranted = false
-                return
-            }
-
-            this.microphonePermissionGranted = true
-            // Enumerate devices after permission is granted
-            await this.enumerateMicrophones()
-        }
-        permission.addEventListener('change', update)
-        update()
-    }
-
-    private async enumerateMicrophones() {
-        try {
-            const devices = await navigator.mediaDevices.enumerateDevices()
-            this.availableMicrophones = devices.filter(device => device.kind === 'audioinput')
-        } catch (e) {
-            console.warn('Cannot enumerate microphones:', e)
-            this.availableMicrophones = []
-        }
-    }
-
-    private async testMicrophonePermission() {
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-
-            // Permission granted, clean up stream
-            stream.getTracks().forEach(track => track.stop())
-        } catch (e) {
-            console.warn('Microphone permission denied:', e)
-            this.microphonePermissionGranted = false
-            this.alert(t('settingsMicPermissionRequired'))
-        }
-    }
-
     private async sync() {
         const msg: FetchConfigMessage = {
             type: 'fetch-config',
@@ -1441,15 +1381,6 @@ export class Settings extends LitElement {
                 elem.reportValidity()
             }
         }
-    }
-
-    private alert(content: string) {
-        const dialogWrapper = document.getElementById('alert-dialog') as Alert
-        dialogWrapper.setContent(t('alertDefaultHeadline'), content)
-
-        if (dialogWrapper.shadowRoot == null) return
-        const dialog = dialogWrapper.shadowRoot.children[0] as MdDialog
-        dialog.show()
     }
 
     private updateTimerEstimate() {
@@ -1541,7 +1472,6 @@ export class Settings extends LitElement {
                         }
                         this.config.transcription.enabled = true
                         Settings.setConfiguration(this.config)
-                        Settings.syncConfiguration(this.config)
                     } else if (message.modelType === 'summary') {
                         this.isSummaryModelDownloading = false
                         this.summaryDownloadProgress = null
@@ -1554,7 +1484,6 @@ export class Settings extends LitElement {
                         }
                         this.config.summary.enabled = true
                         Settings.setConfiguration(this.config)
-                        Settings.syncConfiguration(this.config)
                     }
                     this.requestUpdate()
                     break
@@ -1569,7 +1498,6 @@ export class Settings extends LitElement {
                         this.isUserCancellingTranscriptionDownload = false
                         this.config.transcription.enabled = false
                         Settings.setConfiguration(this.config)
-                        Settings.syncConfiguration(this.config)
                     } else if (message.modelType === 'summary') {
                         this.isSummaryModelDownloading = false
                         this.summaryDownloadProgress = null
@@ -1580,7 +1508,6 @@ export class Settings extends LitElement {
                         this.isUserCancellingSummaryDownload = false
                         this.config.summary.enabled = false
                         Settings.setConfiguration(this.config)
-                        Settings.syncConfiguration(this.config)
                     }
                     this.requestUpdate()
                     break
@@ -1659,6 +1586,11 @@ export class Settings extends LitElement {
      * Called when the Settings tab becomes active/inactive.
      */
     public async setTabActive(isActive: boolean) {
+        this.isTabActive = isActive
+        const micSettings = this.shadowRoot?.querySelector('mic-settings') as MicSettings | null
+        if (micSettings) {
+            micSettings.setTabActive(isActive)
+        }
         if (isActive) {
             await this.checkTranscriptionCacheConsistency()
             await this.checkSummaryCacheConsistency()
@@ -1798,7 +1730,6 @@ export class Settings extends LitElement {
             this.config.transcription.enabled = enabled
             this.requestUpdate('config', oldVal)
             Settings.setConfiguration(this.config)
-            await Settings.syncConfiguration(this.config)
         } finally {
             if (this.transcriptionToggleGeneration === currentGen) {
                 this.isTogglingTranscription = false
@@ -1833,7 +1764,6 @@ export class Settings extends LitElement {
         this.config.transcription.enabled = enabled
         this.requestUpdate('config', oldVal)
         Settings.setConfiguration(this.config)
-        await Settings.syncConfiguration(this.config)
     }
 
     private async updateSummaryEnabled(e: Event) {
@@ -1901,7 +1831,6 @@ export class Settings extends LitElement {
         this.config.summary.enabled = enabled
         this.requestUpdate('config', oldVal)
         Settings.setConfiguration(this.config)
-        await Settings.syncConfiguration(this.config)
     }
 }
 
