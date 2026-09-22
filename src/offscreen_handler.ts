@@ -38,7 +38,6 @@ export interface OffscreenDeps {
     getConfiguration(): Configuration
     mergeRemoteConfiguration(remote: Configuration): void
     session: OffscreenSession
-    checkStoragePersisted(): Promise<boolean>
     sendEvent(e: Event): void
     sendException(e: unknown, meta: ExceptionMetadata): void
     flush(): Promise<void>
@@ -137,15 +136,10 @@ export class OffscreenHandler {
         const { videoFormat, recordingSize } = this.deps.getRecordingInfo(data.tabSize)
         const config = this.deps.getConfiguration()
 
-        const opfsPersisted = await this.deps.checkStoragePersisted()
-        if (!opfsPersisted) {
-            console.warn('OPFS persist: permission denied')
-        }
         this.deps.sendEvent({
             type: 'start_recording',
             tags: {
                 trigger,
-                state: { opfsPersisted },
             },
         })
 

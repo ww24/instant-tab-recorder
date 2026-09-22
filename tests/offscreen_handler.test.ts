@@ -85,7 +85,6 @@ function createMockDeps(overrides: Partial<OffscreenDeps> = {}): OffscreenDeps {
         getConfiguration: vi.fn().mockReturnValue(defaultConfig),
         mergeRemoteConfiguration: vi.fn(),
         session: createMockSession(),
-        checkStoragePersisted: vi.fn().mockResolvedValue(true),
         sendEvent: vi.fn(),
         sendException: vi.fn(),
         flush: vi.fn().mockResolvedValue(undefined),
@@ -126,21 +125,8 @@ describe('start-recording', () => {
         expect(deps.getConfiguration).toHaveBeenCalled()
     })
 
-    it('checks OPFS persistence', async () => {
+    it('sends start_recording event with trigger tag', async () => {
         const deps = createMockDeps()
-        const handler = new OffscreenHandler(deps)
-        await handler.handleMessage({
-            type: 'start-recording',
-            data: { tabSize: { width: 1920, height: 1080 }, streamId: 'stream-1' },
-            trigger: 'action-icon',
-        })
-        expect(deps.checkStoragePersisted).toHaveBeenCalled()
-    })
-
-    it('sends start_recording event with trigger and opfsPersisted tags', async () => {
-        const deps = createMockDeps({
-            checkStoragePersisted: vi.fn().mockResolvedValue(false),
-        })
         const handler = new OffscreenHandler(deps)
         await handler.handleMessage({
             type: 'start-recording',
@@ -151,7 +137,6 @@ describe('start-recording', () => {
             type: 'start_recording',
             tags: {
                 trigger: 'keyboard-shortcut',
-                state: { opfsPersisted: false },
             },
         })
     })
