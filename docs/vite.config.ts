@@ -103,14 +103,62 @@ const PAGE_CONFIG = {
     },
 }
 
+function removeOppositeLangElements(html: string, targetRemoveLang: 'en' | 'ja'): string {
+    let result = html
+    const startTagRegex = new RegExp(`<([a-zA-Z0-9-]+)\\b(?=[^>]*\\bdata-lang=["']${targetRemoveLang}["'])[^>]*>`, 'i')
+
+    while (true) {
+        const match = startTagRegex.exec(result)
+        if (!match) break
+
+        const startIndex = match.index
+        const tagName = match[1].toLowerCase()
+        const isSelfClosing = match[0].endsWith('/>') || ['br', 'hr', 'img', 'input', 'link', 'meta'].includes(tagName)
+
+        if (isSelfClosing) {
+            result = result.slice(0, startIndex) + result.slice(startIndex + match[0].length)
+            continue
+        }
+
+        let depth = 1
+        const searchIndex = startIndex + match[0].length
+        const tagScanRegex = new RegExp(`<(/)?(${tagName})\\b([^>]*)>`, 'gi')
+        tagScanRegex.lastIndex = searchIndex
+
+        let endIndex = -1
+        let scanMatch: RegExpExecArray | null
+        while ((scanMatch = tagScanRegex.exec(result)) !== null) {
+            const isClosing = scanMatch[1] === '/'
+            const isSelf = scanMatch[0].endsWith('/>')
+
+            if (isClosing) {
+                depth--
+                if (depth === 0) {
+                    endIndex = scanMatch.index + scanMatch[0].length
+                    break
+                }
+            } else if (!isSelf) {
+                depth++
+            }
+        }
+
+        if (endIndex !== -1) {
+            result = result.slice(0, startIndex) + result.slice(endIndex)
+        } else {
+            result = result.slice(0, startIndex) + result.slice(startIndex + match[0].length)
+        }
+    }
+
+    return result
+}
+
 function renderLpPage(templateHtml: string, lang: 'en' | 'ja'): string {
     const config = PAGE_CONFIG[lang]
     const vars = loadLegalDocs()
 
     // 1. Remove opposite language data-lang blocks
     const targetRemoveLang = lang === 'en' ? 'ja' : 'en'
-    const removeRegex = new RegExp(`<\\w+[^>]*\\bdata-lang="${targetRemoveLang}"[^>]*>[\\s\\S]*?<\\/\\w+>`, 'gi')
-    let result = templateHtml.replace(removeRegex, '')
+    let result = removeOppositeLangElements(templateHtml, targetRemoveLang)
 
     // 2. Clean up current language data-lang attribute
     result = result.replace(new RegExp(`\\s*data-lang="${lang}"`, 'g'), '')
