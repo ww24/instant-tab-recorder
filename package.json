@@ -29,11 +29,11 @@
   "dependencies": {
     "@huggingface/transformers": "^4.3.0",
     "@material/web": "^2.5.0",
-    "@mediabunny/flac-encoder": "1.56.3",
+    "@mediabunny/flac-encoder": "1.58.1",
     "@sentry/browser": "^10.75.0",
     "lit": "^3.3.3",
     "marked": "^18.0.13",
-    "mediabunny": "1.56.3",
+    "mediabunny": "1.58.1",
     "uuid": "^14.0.2"
   },
   "devDependencies": {
