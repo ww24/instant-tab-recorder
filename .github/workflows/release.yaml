@@ -18,16 +18,16 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
       - name: Use Node.js
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        uses: actions/setup-node@v7.1.0
         with:
           node-version-file: "package.json"
       - name: Cache node modules
         id: cache-npm
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: actions/cache@v6.1.0
         env:
           cache-name: cache-node-modules
         with:
@@ -48,7 +48,7 @@ jobs:
         id: version
         run: echo "version=$(node -e 'import("./package.json",{with:{type:"json"}}).then(m=>process.stdout.write(m.default.name+"@"+m.default.version))')" >> "$GITHUB_OUTPUT"
       - name: Create Sentry Release
-        uses: getsentry/action-release@e6703d0b00208e0b3687ba660d18ab5af7892821 # v3.7.2
+        uses: getsentry/action-release@v3.7.2
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
           SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
