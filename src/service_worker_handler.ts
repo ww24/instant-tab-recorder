@@ -1,11 +1,24 @@
-import type { Message, Trigger } from './message'
+import type {
+    Message,
+    MuteMicrophoneMessage,
+    MuteMicrophoneResponse,
+    PauseRecordingMessage,
+    ResumeRecordingMessage,
+    StartRecordingMessage,
+    StartRecordingResponse,
+    Trigger,
+    UnmuteMicrophoneMessage,
+} from './message'
 import { Configuration, type Resolution } from './configuration'
 import type { RecordingState } from './handler'
 import { deepMerge } from './element/util'
 
+export type RecordingStateUpdater = (state: RecordingState) => RecordingState | null | Promise<RecordingState | null>
+
 export interface ServiceWorkerDeps {
     getRecordingState: () => Promise<RecordingState>
     setRecordingState: (state: RecordingState) => Promise<void>
+    updateRecordingState: (updater: RecordingStateUpdater) => Promise<RecordingState | null>
     getConfiguration: () => Promise<Configuration>
     getRemoteConfiguration: () => Promise<Configuration | null>
     stopRecording: (trigger: Trigger, skipConfirmation?: boolean) => Promise<void>
@@ -137,13 +150,212 @@ async function handleTimerUpdated(
     message: Extract<Message, { type: 'timer-updated' }>,
     deps: ServiceWorkerDeps,
 ): Promise<void> {
-    const timerState = await deps.getRecordingState()
-    if (timerState.isRecording) {
-        const updatedTimerState = { ...timerState, stopAtMs: message.stopAtMs ?? undefined }
-        await deps.setRecordingState(updatedTimerState)
+    const updatedTimerState = await deps.updateRecordingState(timerState =>
+        timerState.isRecording ? { ...timerState, stopAtMs: message.stopAtMs ?? undefined } : null,
+    )
+    if (updatedTimerState) {
         await deps.broadcastRecordingState()
         await deps.updateActionTitle(updatedTimerState)
     }
+}
+
+export const DEFAULT_IPC_TIMEOUT_MS = 5_000
+
+function sendWithTimeout<T>(promise: Promise<T>, timeoutMs = DEFAULT_IPC_TIMEOUT_MS): Promise<T> {
+    let timerId: ReturnType<typeof setTimeout> | undefined
+    const timeoutPromise = new Promise<never>((_, reject) => {
+        timerId = setTimeout(() => {
+            reject(new Error(`Offscreen IPC timed out after ${timeoutMs}ms`))
+        }, timeoutMs)
+    })
+    return Promise.race([promise, timeoutPromise]).finally(() => {
+        if (timerId != null) clearTimeout(timerId)
+    })
+}
+
+export interface RecordingStateManager {
+    getRecordingState: () => Promise<RecordingState>
+    setRecordingState: (state: RecordingState) => Promise<void>
+    updateRecordingState: (updater: RecordingStateUpdater) => Promise<RecordingState | null>
+    setStarting: (starting: boolean) => void
+}
+
+/**
+ * Creates accessors for reading, writing, and atomically updating RecordingState.
+ * - `getRecordingState` does not enter the mutation queue so read-only callers (ticks, UI, fetch) never block.
+ * - While `isStarting` is true, reads return `{ isRecording: false }` and updates return `null` so controls
+ *   invoked during startup are ignored rather than reading stale state from a previous session.
+ * - `setRecordingState` and `updateRecordingState` are serialized via a Promise queue to prevent lost updates.
+ */
+export function createRecordingStateManager(
+    readState: () => Promise<RecordingState>,
+    writeState: (state: RecordingState) => Promise<void>,
+): RecordingStateManager {
+    let queue: Promise<void> = Promise.resolve()
+    let isStarting = false
+
+    function enqueue<T>(op: () => Promise<T>): Promise<T> {
+        const next = queue.then(op, op)
+        queue = next.then(
+            () => undefined,
+            () => undefined,
+        )
+        return next
+    }
+
+    return {
+        getRecordingState: async () => {
+            if (isStarting) return { isRecording: false }
+            return readState()
+        },
+        setRecordingState: (state: RecordingState) =>
+            enqueue(async () => {
+                try {
+                    await writeState(state)
+                } finally {
+                    isStarting = false
+                }
+            }),
+        updateRecordingState: (updater: RecordingStateUpdater) =>
+            enqueue(async () => {
+                if (isStarting) return null
+                const state = await readState()
+                const nextState = await updater(state)
+                if (nextState == null) return null
+                await writeState(nextState)
+                return nextState
+            }),
+        setStarting: (starting: boolean) => {
+            isStarting = starting
+        },
+    }
+}
+
+/**
+ * Sends `start-recording` outside the state mutation queue while marking the manager as `starting`,
+ * then persists the initial state inside the queue once the offscreen document responds.
+ */
+export async function startRecordingSession(
+    msg: StartRecordingMessage,
+    screenSize: Resolution,
+    stateManager: Pick<RecordingStateManager, 'setRecordingState' | 'setStarting'>,
+    sendRuntimeMessage: (msg: StartRecordingMessage) => Promise<StartRecordingResponse | undefined>,
+    onStateUpdated: () => Promise<void>,
+): Promise<void> {
+    stateManager.setStarting(true)
+    try {
+        const response = await sendRuntimeMessage(msg)
+        if (response == null) {
+            throw new Error('unexpected start recording response')
+        }
+        await stateManager.setRecordingState({
+            isRecording: true,
+            screenSize,
+            startAtMs: response.startAtMs,
+            recordingMode: response.recordingMode,
+            micEnabled: response.micEnabled,
+            stopAtMs: response.stopAtMs,
+        })
+    } finally {
+        stateManager.setStarting(false)
+    }
+    await onStateUpdated()
+}
+
+export function createPauseUpdater(
+    trigger: Trigger,
+    sendRuntimeMessage: (msg: PauseRecordingMessage) => Promise<unknown>,
+    timeoutMs = DEFAULT_IPC_TIMEOUT_MS,
+): RecordingStateUpdater {
+    return async state => {
+        if (!state.isRecording || state.isPaused) return null
+        const msg: PauseRecordingMessage = { type: 'pause-recording', trigger }
+        await sendWithTimeout(sendRuntimeMessage(msg), timeoutMs)
+        return { ...state, isPaused: true, pausedAtMs: Date.now() }
+    }
+}
+
+export function createResumeUpdater(
+    trigger: Trigger,
+    sendRuntimeMessage: (msg: ResumeRecordingMessage) => Promise<unknown>,
+    timeoutMs = DEFAULT_IPC_TIMEOUT_MS,
+): RecordingStateUpdater {
+    return async state => {
+        if (!state.isRecording || !state.isPaused) return null
+        const msg: ResumeRecordingMessage = { type: 'resume-recording', trigger }
+        await sendWithTimeout(sendRuntimeMessage(msg), timeoutMs)
+        const pausedDuration = state.pausedAtMs != null ? Date.now() - state.pausedAtMs : 0
+        const totalPausedMs = (state.totalPausedMs ?? 0) + pausedDuration
+        return { ...state, isPaused: false, pausedAtMs: undefined, totalPausedMs }
+    }
+}
+
+export async function pauseRecordingSession(
+    trigger: Trigger,
+    stateManager: Pick<RecordingStateManager, 'updateRecordingState'>,
+    sendRuntimeMessage: (msg: PauseRecordingMessage) => Promise<unknown>,
+    onStateUpdated: () => Promise<void>,
+    timeoutMs = DEFAULT_IPC_TIMEOUT_MS,
+): Promise<void> {
+    const updated = await stateManager.updateRecordingState(createPauseUpdater(trigger, sendRuntimeMessage, timeoutMs))
+    if (updated == null) return
+    await onStateUpdated()
+}
+
+export async function resumeRecordingSession(
+    trigger: Trigger,
+    stateManager: Pick<RecordingStateManager, 'updateRecordingState'>,
+    sendRuntimeMessage: (msg: ResumeRecordingMessage) => Promise<unknown>,
+    onStateUpdated: () => Promise<void>,
+    timeoutMs = DEFAULT_IPC_TIMEOUT_MS,
+): Promise<void> {
+    const updated = await stateManager.updateRecordingState(createResumeUpdater(trigger, sendRuntimeMessage, timeoutMs))
+    if (updated == null) return
+    await onStateUpdated()
+}
+
+export async function togglePauseRecordingSession(
+    trigger: Trigger,
+    stateManager: Pick<RecordingStateManager, 'updateRecordingState'>,
+    sendRuntimeMessage: (msg: PauseRecordingMessage | ResumeRecordingMessage) => Promise<unknown>,
+    onStateUpdated: () => Promise<void>,
+    timeoutMs = DEFAULT_IPC_TIMEOUT_MS,
+): Promise<void> {
+    const pauseUpdater = createPauseUpdater(trigger, sendRuntimeMessage, timeoutMs)
+    const resumeUpdater = createResumeUpdater(trigger, sendRuntimeMessage, timeoutMs)
+    const updated = await stateManager.updateRecordingState(state =>
+        state.isPaused ? resumeUpdater(state) : pauseUpdater(state),
+    )
+    if (updated == null) return
+    await onStateUpdated()
+}
+
+/**
+ * Serializes the complete read -> send message -> persist state operation for toggling microphone mute.
+ * Uses the `isMicMuted` value returned by the offscreen document as the source of truth.
+ */
+export async function toggleMicrophoneMute(
+    trigger: Trigger,
+    stateManager: Pick<RecordingStateManager, 'updateRecordingState'>,
+    sendRuntimeMessage: (
+        msg: MuteMicrophoneMessage | UnmuteMicrophoneMessage,
+    ) => Promise<MuteMicrophoneResponse | undefined>,
+    onStateUpdated: () => Promise<void>,
+    timeoutMs = DEFAULT_IPC_TIMEOUT_MS,
+): Promise<void> {
+    const updated = await stateManager.updateRecordingState(async state => {
+        if (!state.isRecording || !state.micEnabled) return null
+        const nextMuted = !state.isMicMuted
+        const msg: MuteMicrophoneMessage | UnmuteMicrophoneMessage = {
+            type: nextMuted ? 'mute-microphone' : 'unmute-microphone',
+            trigger,
+        }
+        const response = await sendWithTimeout(sendRuntimeMessage(msg), timeoutMs)
+        if (response == null || typeof response.isMicMuted !== 'boolean') return null
+        return { ...state, isMicMuted: response.isMicMuted }
+    })
+    if (updated == null) return
+    await onStateUpdated()
 }
 
 async function handleSaveConfigSync(

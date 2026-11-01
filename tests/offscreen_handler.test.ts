@@ -808,20 +808,30 @@ describe('resume-recording', () => {
 // ---------- mute-microphone / unmute-microphone ----------
 
 describe('mute-microphone', () => {
-    it('calls session.muteMicrophone()', async () => {
-        const deps = createMockDeps()
+    it('calls session.muteMicrophone() and returns isMicMuted from session', async () => {
+        const session = createMockSession()
+        ;(session.muteMicrophone as Mock).mockImplementation(() => {
+            ;(session as { isMicMuted: boolean }).isMicMuted = true
+        })
+        const deps = createMockDeps({ session })
         const handler = new OffscreenHandler(deps)
-        await handler.handleMessage({ type: 'mute-microphone', trigger: 'keyboard-shortcut' })
+        const result = await handler.handleMessage({ type: 'mute-microphone', trigger: 'keyboard-shortcut' })
         expect(deps.session.muteMicrophone).toHaveBeenCalled()
+        expect(result).toEqual({ isMicMuted: true })
     })
 })
 
 describe('unmute-microphone', () => {
-    it('calls session.unmuteMicrophone()', async () => {
-        const deps = createMockDeps()
+    it('calls session.unmuteMicrophone() and returns isMicMuted from session', async () => {
+        const session = createMockSession({ isMicMuted: true })
+        ;(session.unmuteMicrophone as Mock).mockImplementation(() => {
+            ;(session as { isMicMuted: boolean }).isMicMuted = false
+        })
+        const deps = createMockDeps({ session })
         const handler = new OffscreenHandler(deps)
-        await handler.handleMessage({ type: 'unmute-microphone', trigger: 'context-menu' })
+        const result = await handler.handleMessage({ type: 'unmute-microphone', trigger: 'context-menu' })
         expect(deps.session.unmuteMicrophone).toHaveBeenCalled()
+        expect(result).toEqual({ isMicMuted: false })
     })
 })
 

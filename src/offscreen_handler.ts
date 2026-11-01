@@ -2,12 +2,16 @@ import type { Configuration, RecordingInfo, Resolution, CropRegion } from './con
 import type {
     Message,
     ModelType,
+    MuteMicrophoneMessage,
+    MuteMicrophoneResponse,
     StartRecording,
+    StartRecordingMessage,
     StartRecordingResponse,
     StartTrigger,
     Trigger,
     TimerExpiredMessage,
     TimerUpdatedMessage,
+    UnmuteMicrophoneMessage,
 } from './message'
 import type { RecordingConfig, RecordingResult } from './recorder'
 import type { Event, ExceptionMetadata } from './sentry_event'
@@ -87,7 +91,10 @@ export class OffscreenHandler {
         }
     }
 
-    handleMessage(message: Message): Promise<StartRecordingResponse | void> | null {
+    handleMessage(message: StartRecordingMessage): Promise<StartRecordingResponse>
+    handleMessage(message: MuteMicrophoneMessage | UnmuteMicrophoneMessage): Promise<MuteMicrophoneResponse>
+    handleMessage(message: Message): Promise<StartRecordingResponse | MuteMicrophoneResponse | void> | null
+    handleMessage(message: Message): Promise<StartRecordingResponse | MuteMicrophoneResponse | void> | null {
         switch (message.type) {
             case 'start-recording':
                 return this.handleStartRecording(message.data, message.trigger)
@@ -305,12 +312,14 @@ export class OffscreenHandler {
         await this.resumeRecordingTimer()
     }
 
-    private async handleMuteMicrophone(): Promise<void> {
+    private async handleMuteMicrophone(): Promise<MuteMicrophoneResponse> {
         this.deps.session.muteMicrophone()
+        return { isMicMuted: this.deps.session.isMicMuted }
     }
 
-    private async handleUnmuteMicrophone(): Promise<void> {
+    private async handleUnmuteMicrophone(): Promise<MuteMicrophoneResponse> {
         this.deps.session.unmuteMicrophone()
+        return { isMicMuted: this.deps.session.isMicMuted }
     }
 
     private async handleSaveConfigLocal(data: Configuration): Promise<void> {

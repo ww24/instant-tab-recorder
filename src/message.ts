@@ -118,6 +118,10 @@ export interface UnmuteMicrophoneMessage {
     trigger: Trigger
 }
 
+export interface MuteMicrophoneResponse {
+    isMicMuted: boolean
+}
+
 export interface UnexpectedRecordingStateMessage {
     type: 'unexpected-recording-state'
     error: string

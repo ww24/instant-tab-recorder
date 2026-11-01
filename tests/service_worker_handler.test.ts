@@ -5,7 +5,17 @@ vi.mock('@mediabunny/flac-encoder', () => ({
     registerFlacEncoder: vi.fn(),
 }))
 
-import { handleMessage, createMessageListener, type ServiceWorkerDeps } from '../src/service_worker_handler'
+import {
+    handleMessage,
+    createMessageListener,
+    createRecordingStateManager,
+    pauseRecordingSession,
+    resumeRecordingSession,
+    startRecordingSession,
+    toggleMicrophoneMute,
+    togglePauseRecordingSession,
+    type ServiceWorkerDeps,
+} from '../src/service_worker_handler'
 import type { Message } from '../src/message'
 import type { RecordingState } from '../src/handler'
 import type { Configuration } from '../src/configuration'
@@ -13,9 +23,19 @@ import type { Configuration } from '../src/configuration'
 // ---------- helpers ----------
 
 function createMockDeps(overrides: Partial<ServiceWorkerDeps> = {}): ServiceWorkerDeps {
+    const getRecordingState = overrides.getRecordingState ?? vi.fn().mockResolvedValue({ isRecording: false })
+    const setRecordingState = overrides.setRecordingState ?? vi.fn().mockResolvedValue(undefined)
     return {
-        getRecordingState: vi.fn().mockResolvedValue({ isRecording: false }),
-        setRecordingState: vi.fn().mockResolvedValue(undefined),
+        getRecordingState,
+        setRecordingState,
+        updateRecordingState: vi.fn(async updater => {
+            const state = await getRecordingState()
+            const nextState = await updater(state)
+            if (nextState != null) {
+                await setRecordingState(nextState)
+            }
+            return nextState
+        }),
         getConfiguration: vi.fn().mockResolvedValue({} as Configuration),
         getRemoteConfiguration: vi.fn().mockResolvedValue(null),
         stopRecording: vi.fn().mockResolvedValue(undefined),
@@ -406,5 +426,383 @@ describe('handleForwardToOffscreen lifecycle', () => {
         await result!.response
 
         expect(deps.ensureOffscreenDocument).not.toHaveBeenCalled()
+    })
+})
+
+describe('createRecordingStateManager', () => {
+    it('serializes overlapping updateRecordingState calls so changes do not overwrite each other', async () => {
+        let storedState: RecordingState = {
+            isRecording: true,
+            micEnabled: true,
+            isMicMuted: false,
+            isPaused: false,
+        }
+
+        const readState = vi.fn(async () => {
+            // Simulate async storage read latency
+            await new Promise(resolve => setTimeout(resolve, 10))
+            return { ...storedState }
+        })
+        const writeState = vi.fn(async (nextState: RecordingState) => {
+            await new Promise(resolve => setTimeout(resolve, 10))
+            storedState = { ...nextState }
+        })
+
+        const manager = createRecordingStateManager(readState, writeState)
+
+        // Fire mute, pause, and timer update concurrently
+        const [muteResult, pauseResult, timerResult] = await Promise.all([
+            manager.updateRecordingState(state => (state.isRecording ? { ...state, isMicMuted: true } : null)),
+            manager.updateRecordingState(state =>
+                state.isRecording ? { ...state, isPaused: true, pausedAtMs: 5000 } : null,
+            ),
+            manager.updateRecordingState(state => (state.isRecording ? { ...state, stopAtMs: 60000 } : null)),
+        ])
+
+        expect(muteResult).toEqual({
+            isRecording: true,
+            micEnabled: true,
+            isMicMuted: true,
+            isPaused: false,
+        })
+        expect(pauseResult).toEqual({
+            isRecording: true,
+            micEnabled: true,
+            isMicMuted: true,
+            isPaused: true,
+            pausedAtMs: 5000,
+        })
+        expect(timerResult).toEqual({
+            isRecording: true,
+            micEnabled: true,
+            isMicMuted: true,
+            isPaused: true,
+            pausedAtMs: 5000,
+            stopAtMs: 60000,
+        })
+
+        const finalState = await manager.getRecordingState()
+        expect(finalState).toEqual({
+            isRecording: true,
+            micEnabled: true,
+            isMicMuted: true,
+            isPaused: true,
+            pausedAtMs: 5000,
+            stopAtMs: 60000,
+        })
+    })
+
+    it('skips writeState when updater returns null', async () => {
+        const storedState: RecordingState = { isRecording: false }
+        const readState = vi.fn().mockResolvedValue(storedState)
+        const writeState = vi.fn().mockResolvedValue(undefined)
+
+        const manager = createRecordingStateManager(readState, writeState)
+        const result = await manager.updateRecordingState(state =>
+            state.isRecording ? { ...state, isMicMuted: true } : null,
+        )
+
+        expect(result).toBeNull()
+        expect(writeState).not.toHaveBeenCalled()
+    })
+
+    it('does not block getRecordingState while updateRecordingState is awaiting IPC', async () => {
+        const storedState: RecordingState = { isRecording: true, startAtMs: 1000 }
+        const readState = vi.fn().mockResolvedValue(storedState)
+        const writeState = vi.fn().mockResolvedValue(undefined)
+        const manager = createRecordingStateManager(readState, writeState)
+
+        let releaseUpdate!: () => void
+        const updatePromise = manager.updateRecordingState(async state => {
+            await new Promise<void>(resolve => {
+                releaseUpdate = resolve
+            })
+            return { ...state, isPaused: true }
+        })
+
+        // getRecordingState should resolve immediately even while updateRecordingState is in flight
+        const readResult = await manager.getRecordingState()
+        expect(readResult).toEqual(storedState)
+
+        releaseUpdate()
+        await updatePromise
+    })
+})
+
+describe('toggleMicrophoneMute', () => {
+    it('serializes overlapping toggle invocations and persists isMicMuted from offscreen response', async () => {
+        let storedState: RecordingState = {
+            isRecording: true,
+            micEnabled: true,
+            isMicMuted: false,
+        }
+
+        const readState = vi.fn(async () => {
+            await new Promise(resolve => setTimeout(resolve, 10))
+            return { ...storedState }
+        })
+        const writeState = vi.fn(async (nextState: RecordingState) => {
+            await new Promise(resolve => setTimeout(resolve, 10))
+            storedState = { ...nextState }
+        })
+
+        const manager = createRecordingStateManager(readState, writeState)
+        const sentMessages: Message[] = []
+        let offscreenMicMuted = false
+        const sendRuntimeMessage = vi.fn(async (msg: Message) => {
+            await new Promise(resolve => setTimeout(resolve, 15))
+            sentMessages.push(msg)
+            offscreenMicMuted = msg.type === 'mute-microphone'
+            return { isMicMuted: offscreenMicMuted }
+        })
+        const onStateUpdated = vi.fn().mockResolvedValue(undefined)
+
+        // Invoke two toggles concurrently (e.g. rapid shortcut presses or shortcut + context menu)
+        await Promise.all([
+            toggleMicrophoneMute('keyboard-shortcut', manager, sendRuntimeMessage, onStateUpdated),
+            toggleMicrophoneMute('context-menu', manager, sendRuntimeMessage, onStateUpdated),
+        ])
+
+        expect(sentMessages).toEqual([
+            { type: 'mute-microphone', trigger: 'keyboard-shortcut' },
+            { type: 'unmute-microphone', trigger: 'context-menu' },
+        ])
+        expect(storedState.isMicMuted).toBe(false)
+        expect(onStateUpdated).toHaveBeenCalledTimes(2)
+    })
+
+    it('does not update state when offscreen fails and returns undefined', async () => {
+        let storedState: RecordingState = {
+            isRecording: true,
+            micEnabled: true,
+            isMicMuted: false,
+        }
+        const writeState = vi.fn(async (nextState: RecordingState) => {
+            storedState = { ...nextState }
+        })
+        const manager = createRecordingStateManager(
+            vi.fn().mockImplementation(async () => ({ ...storedState })),
+            writeState,
+        )
+        const sendRuntimeMessage = vi.fn().mockResolvedValue(undefined)
+        const onStateUpdated = vi.fn().mockResolvedValue(undefined)
+
+        await toggleMicrophoneMute('keyboard-shortcut', manager, sendRuntimeMessage, onStateUpdated)
+
+        expect(sendRuntimeMessage).toHaveBeenCalledWith({
+            type: 'mute-microphone',
+            trigger: 'keyboard-shortcut',
+        })
+        expect(writeState).not.toHaveBeenCalled()
+        expect(storedState.isMicMuted).toBe(false)
+        expect(onStateUpdated).not.toHaveBeenCalled()
+    })
+
+    it('times out and releases queue when offscreen does not respond', async () => {
+        let storedState: RecordingState = {
+            isRecording: true,
+            micEnabled: true,
+            isMicMuted: false,
+        }
+        const manager = createRecordingStateManager(
+            vi.fn(async () => ({ ...storedState })),
+            vi.fn(async nextState => {
+                storedState = { ...nextState }
+            }),
+        )
+        const neverResolvingSend = vi.fn(() => new Promise<never>(() => {}))
+        const onStateUpdated = vi.fn().mockResolvedValue(undefined)
+
+        await expect(
+            toggleMicrophoneMute('keyboard-shortcut', manager, neverResolvingSend, onStateUpdated, 20),
+        ).rejects.toThrow('Offscreen IPC timed out after 20ms')
+
+        // Subsequent operations in the queue should still succeed
+        await toggleMicrophoneMute(
+            'keyboard-shortcut',
+            manager,
+            vi.fn().mockResolvedValue({ isMicMuted: true }),
+            onStateUpdated,
+        )
+        expect(storedState.isMicMuted).toBe(true)
+    })
+
+    it('does nothing when not recording or micEnabled is false', async () => {
+        const manager = createRecordingStateManager(
+            vi.fn().mockResolvedValue({ isRecording: true, micEnabled: false }),
+            vi.fn().mockResolvedValue(undefined),
+        )
+        const sendRuntimeMessage = vi.fn().mockResolvedValue(undefined)
+        const onStateUpdated = vi.fn().mockResolvedValue(undefined)
+
+        await toggleMicrophoneMute('keyboard-shortcut', manager, sendRuntimeMessage, onStateUpdated)
+
+        expect(sendRuntimeMessage).not.toHaveBeenCalled()
+        expect(onStateUpdated).not.toHaveBeenCalled()
+    })
+
+    it('gates mute shortcut invoked while start-recording is in flight without blocking getRecordingState', async () => {
+        // Simulate leftover stored state from a previous session where mic was muted
+        let storedState: RecordingState = {
+            isRecording: true,
+            startAtMs: 1000,
+            micEnabled: true,
+            isMicMuted: true,
+        }
+        let offscreenHashIsRecording = false
+
+        const readState = vi.fn(async (): Promise<RecordingState> => {
+            if (!offscreenHashIsRecording) return { isRecording: false }
+            return { ...storedState, isRecording: true }
+        })
+        const writeState = vi.fn(async (nextState: RecordingState) => {
+            storedState = { ...nextState }
+        })
+
+        const manager = createRecordingStateManager(readState, writeState)
+        const sentMessages: Message[] = []
+
+        // Start recording: offscreen publishes #recording before returning StartRecordingResponse
+        let resolveStartResponse!: () => void
+        const startResponseGate = new Promise<void>(resolve => {
+            resolveStartResponse = resolve
+        })
+
+        const startPromise = startRecordingSession(
+            {
+                type: 'start-recording',
+                trigger: 'action-icon',
+                data: { tabSize: { width: 1920, height: 1080 }, streamId: 'stream-1' },
+            },
+            { width: 1920, height: 1080 },
+            manager,
+            async msg => {
+                sentMessages.push(msg)
+                // Offscreen sets #recording while IndexedDB writes are still in flight
+                offscreenHashIsRecording = true
+                await startResponseGate
+                return {
+                    startAtMs: 2000,
+                    mainFilePath: 'video-2000.webm',
+                    mimeType: 'video/webm',
+                    recordingMode: 'video-and-audio',
+                    micEnabled: true,
+                }
+            },
+            vi.fn().mockResolvedValue(undefined),
+        )
+
+        // Wait until offscreen has set #recording (while start-recording is still in flight)
+        await vi.waitFor(() => {
+            expect(offscreenHashIsRecording).toBe(true)
+        })
+
+        // getRecordingState is not blocked and returns { isRecording: false } while starting
+        expect(await manager.getRecordingState()).toEqual({ isRecording: false })
+
+        // User invokes mute shortcut during that startup interval — should be gated (ignored)
+        // rather than reading the previous session's isMicMuted: true
+        await toggleMicrophoneMute(
+            'keyboard-shortcut',
+            manager,
+            async msg => {
+                sentMessages.push(msg)
+                return { isMicMuted: false }
+            },
+            vi.fn().mockResolvedValue(undefined),
+        )
+
+        expect(sentMessages).toEqual([
+            {
+                type: 'start-recording',
+                trigger: 'action-icon',
+                data: { tabSize: { width: 1920, height: 1080 }, streamId: 'stream-1' },
+            },
+        ])
+
+        // Allow start-recording response to complete
+        resolveStartResponse()
+        await startPromise
+
+        expect(storedState).toEqual({
+            isRecording: true,
+            screenSize: { width: 1920, height: 1080 },
+            startAtMs: 2000,
+            recordingMode: 'video-and-audio',
+            micEnabled: true,
+            stopAtMs: undefined,
+        })
+    })
+})
+
+describe('pause/resume session helpers', () => {
+    it('pauseRecordingSession and resumeRecordingSession update state and accumulate totalPausedMs', async () => {
+        let storedState: RecordingState = {
+            isRecording: true,
+            startAtMs: 1000,
+            isPaused: false,
+        }
+        const manager = createRecordingStateManager(
+            vi.fn(async () => ({ ...storedState })),
+            vi.fn(async nextState => {
+                storedState = { ...nextState }
+            }),
+        )
+        const sendRuntimeMessage = vi.fn().mockResolvedValue(undefined)
+        const onStateUpdated = vi.fn().mockResolvedValue(undefined)
+
+        await pauseRecordingSession('keyboard-shortcut', manager, sendRuntimeMessage, onStateUpdated)
+        expect(sendRuntimeMessage).toHaveBeenCalledWith({
+            type: 'pause-recording',
+            trigger: 'keyboard-shortcut',
+        })
+        expect(storedState.isPaused).toBe(true)
+        expect(storedState.pausedAtMs).toEqual(expect.any(Number))
+
+        await resumeRecordingSession('keyboard-shortcut', manager, sendRuntimeMessage, onStateUpdated)
+        expect(sendRuntimeMessage).toHaveBeenCalledWith({
+            type: 'resume-recording',
+            trigger: 'keyboard-shortcut',
+        })
+        expect(storedState.isPaused).toBe(false)
+        expect(storedState.pausedAtMs).toBeUndefined()
+        expect(storedState.totalPausedMs).toEqual(expect.any(Number))
+        expect(onStateUpdated).toHaveBeenCalledTimes(2)
+    })
+
+    it('togglePauseRecordingSession serializes overlapping toggles so two toggles pause then resume', async () => {
+        let storedState: RecordingState = {
+            isRecording: true,
+            startAtMs: 1000,
+            isPaused: false,
+        }
+        const manager = createRecordingStateManager(
+            vi.fn(async () => {
+                await new Promise(resolve => setTimeout(resolve, 10))
+                return { ...storedState }
+            }),
+            vi.fn(async nextState => {
+                await new Promise(resolve => setTimeout(resolve, 10))
+                storedState = { ...nextState }
+            }),
+        )
+        const sentMessages: Message[] = []
+        const sendRuntimeMessage = vi.fn(async (msg: Message) => {
+            await new Promise(resolve => setTimeout(resolve, 15))
+            sentMessages.push(msg)
+        })
+        const onStateUpdated = vi.fn().mockResolvedValue(undefined)
+
+        await Promise.all([
+            togglePauseRecordingSession('keyboard-shortcut', manager, sendRuntimeMessage, onStateUpdated),
+            togglePauseRecordingSession('context-menu', manager, sendRuntimeMessage, onStateUpdated),
+        ])
+
+        expect(sentMessages).toEqual([
+            { type: 'pause-recording', trigger: 'keyboard-shortcut' },
+            { type: 'resume-recording', trigger: 'context-menu' },
+        ])
+        expect(storedState.isPaused).toBe(false)
+        expect(onStateUpdated).toHaveBeenCalledTimes(2)
     })
 })
