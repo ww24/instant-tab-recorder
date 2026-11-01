@@ -28,6 +28,9 @@ export interface OffscreenSession {
     resume(): void
     readonly isPaused: boolean
     readonly elapsedPausedMs: number
+    muteMicrophone(): void
+    unmuteMicrophone(): void
+    readonly isMicMuted: boolean
     startPreview(): void
     stopPreview(): void
     updateCropRegion(region: CropRegion): void
@@ -94,6 +97,10 @@ export class OffscreenHandler {
                 return this.handlePauseRecording()
             case 'resume-recording':
                 return this.handleResumeRecording()
+            case 'mute-microphone':
+                return this.handleMuteMicrophone()
+            case 'unmute-microphone':
+                return this.handleUnmuteMicrophone()
             case 'cancel-recording':
                 return this.handleCancelRecording()
             case 'save-config-local':
@@ -296,6 +303,14 @@ export class OffscreenHandler {
     private async handleResumeRecording(): Promise<void> {
         this.deps.session.resume()
         await this.resumeRecordingTimer()
+    }
+
+    private async handleMuteMicrophone(): Promise<void> {
+        this.deps.session.muteMicrophone()
+    }
+
+    private async handleUnmuteMicrophone(): Promise<void> {
+        this.deps.session.unmuteMicrophone()
     }
 
     private async handleSaveConfigLocal(data: Configuration): Promise<void> {

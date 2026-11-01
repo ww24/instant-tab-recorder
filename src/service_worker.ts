@@ -9,6 +9,8 @@ import type {
     StopRecordingMessage,
     PauseRecordingMessage,
     ResumeRecordingMessage,
+    MuteMicrophoneMessage,
+    UnmuteMicrophoneMessage,
     SaveConfigLocalMessage,
     ExceptionMessage,
     RecordingStateMessage,
@@ -37,6 +39,7 @@ const APP_NAME = t('appName')
 const DEFAULT_TITLE = t('actionDefaultTitle')
 const CONTEXT_MENU_ID = 'start-recording'
 const CONTEXT_MENU_PAUSE_ID = 'pause-recording'
+const CONTEXT_MENU_MUTE_MIC_ID = 'mute-microphone'
 
 chrome.runtime.onInstalled.addListener(async details => {
     await createOffscreenDocument()
@@ -108,6 +111,14 @@ chrome.runtime.onInstalled.addListener(async details => {
     chrome.contextMenus.create({
         id: CONTEXT_MENU_PAUSE_ID,
         title: t('contextMenuPauseRecording'),
+        contexts: ['page'],
+        visible: false,
+    })
+
+    // Create context menu for mute/unmute microphone (hidden by default)
+    chrome.contextMenus.create({
+        id: CONTEXT_MENU_MUTE_MIC_ID,
+        title: t('contextMenuMuteMicrophone'),
         contexts: ['page'],
         visible: false,
     })
@@ -186,6 +197,16 @@ chrome.contextMenus.onClicked.addListener(async (info: chrome.contextMenus.OnCli
             }
             return
         }
+        if (info.menuItemId === CONTEXT_MENU_MUTE_MIC_ID) {
+            const state = await getRecordingState()
+            if (!state.isRecording || !state.micEnabled) return
+            if (state.isMicMuted) {
+                await unmuteMicrophone(trigger)
+            } else {
+                await muteMicrophone(trigger)
+            }
+            return
+        }
         if (info.menuItemId !== CONTEXT_MENU_ID || !tab) return
         if (await getIsRecording()) {
             await stopRecording(trigger)
@@ -234,6 +255,16 @@ chrome.commands.onCommand.addListener(async (command: string, tab?: chrome.tabs.
                     await resumeRecording(trigger)
                 } else {
                     await pauseRecording(trigger)
+                }
+                break
+            }
+            case 'toggle-mute-microphone': {
+                const state = await getRecordingState()
+                if (!state.isRecording || !state.micEnabled) return
+                if (state.isMicMuted) {
+                    await unmuteMicrophone(trigger)
+                } else {
+                    await muteMicrophone(trigger)
                 }
                 break
             }
@@ -373,6 +404,26 @@ async function resumeRecording(trigger: Trigger) {
     await broadcastRecordingState()
 }
 
+async function muteMicrophone(trigger: Trigger) {
+    const msg: MuteMicrophoneMessage = { type: 'mute-microphone', trigger }
+    await chrome.runtime.sendMessage(msg)
+
+    const state = await getRecordingState()
+    await setRecordingState({ ...state, isMicMuted: true })
+    await updateRecordingIndications()
+    await broadcastRecordingState()
+}
+
+async function unmuteMicrophone(trigger: Trigger) {
+    const msg: UnmuteMicrophoneMessage = { type: 'unmute-microphone', trigger }
+    await chrome.runtime.sendMessage(msg)
+
+    const state = await getRecordingState()
+    await setRecordingState({ ...state, isMicMuted: false })
+    await updateRecordingIndications()
+    await broadcastRecordingState()
+}
+
 async function updateRecordingIndications() {
     try {
         const state = await getRecordingState()
@@ -424,6 +475,10 @@ async function updateContextMenuTitle(state: RecordingState) {
         title: state.isPaused ? t('contextMenuResumeRecording') : t('contextMenuPauseRecording'),
         visible: state.isRecording,
     })
+    await chrome.contextMenus.update(CONTEXT_MENU_MUTE_MIC_ID, {
+        title: state.isMicMuted ? t('contextMenuUnmuteMicrophone') : t('contextMenuMuteMicrophone'),
+        visible: Boolean(state.isRecording && state.micEnabled),
+    })
 }
 
 // Update badge to indicate paused state
@@ -433,7 +488,7 @@ async function updateBadge(state: RecordingState) {
 
 // Broadcast recording state to all option pages
 async function broadcastRecordingState() {
-    const { isRecording, isPaused, totalPausedMs, pausedAtMs, screenSize, startAtMs, stopAtMs } =
+    const { isRecording, isPaused, isMicMuted, totalPausedMs, pausedAtMs, screenSize, startAtMs, stopAtMs } =
         await getRecordingState()
     // When paused, include current pause duration in totalPausedMs
     const effectivePausedMs = (totalPausedMs ?? 0) + (isPaused && pausedAtMs != null ? Date.now() - pausedAtMs : 0)
@@ -442,6 +497,7 @@ async function broadcastRecordingState() {
         data: {
             isRecording,
             isPaused,
+            isMicMuted,
             totalPausedMs: effectivePausedMs,
             screenSize,
             startAtMs,

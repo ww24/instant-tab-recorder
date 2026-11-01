@@ -14,6 +14,8 @@ export type Message =
     | StopRecordingMessage
     | PauseRecordingMessage
     | ResumeRecordingMessage
+    | MuteMicrophoneMessage
+    | UnmuteMicrophoneMessage
     | UnexpectedRecordingStateMessage
     | CancelRecordingMessage
     | ResizeWindowMessage
@@ -103,6 +105,16 @@ export interface PauseRecordingMessage {
 
 export interface ResumeRecordingMessage {
     type: 'resume-recording'
+    trigger: Trigger
+}
+
+export interface MuteMicrophoneMessage {
+    type: 'mute-microphone'
+    trigger: Trigger
+}
+
+export interface UnmuteMicrophoneMessage {
+    type: 'unmute-microphone'
     trigger: Trigger
 }
 

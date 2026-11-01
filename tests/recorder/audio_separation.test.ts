@@ -95,6 +95,7 @@ describe('AudioSeparationManager', () => {
 
             expect(result.tabOutput).toBeDefined()
             expect(result.micOutput).toBeDefined()
+            expect(result.micTrack).toBeDefined()
             expect(result.clonedTracks).toHaveLength(2)
             expect(fileMgr.createAudioFile).toHaveBeenCalledTimes(2)
             // Tab file: video-1000-tab.ogg (opus → ogg)
@@ -114,6 +115,7 @@ describe('AudioSeparationManager', () => {
 
             expect(result.tabOutput).toBeDefined()
             expect(result.micOutput).toBeUndefined()
+            expect(result.micTrack).toBeUndefined()
             expect(result.clonedTracks).toHaveLength(1)
             // aac → adts → .aac extension
             expect(fileMgr.createAudioFile).toHaveBeenCalledWith('video-2000-tab.aac')

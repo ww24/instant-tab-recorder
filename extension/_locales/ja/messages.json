@@ -23,6 +23,9 @@
     "commandTogglePauseRecording": {
         "message": "録画の一時停止/再開"
     },
+    "commandToggleMuteMicrophone": {
+        "message": "マイクのミュート/ミュート解除"
+    },
     "commandOpenOptionPage": {
         "message": "オプションページを開く"
     },
@@ -37,6 +40,12 @@
     },
     "contextMenuResumeRecording": {
         "message": "録画を再開"
+    },
+    "contextMenuMuteMicrophone": {
+        "message": "マイクをミュート"
+    },
+    "contextMenuUnmuteMicrophone": {
+        "message": "マイクのミュートを解除"
     },
     "formatPaused": {
         "message": "一時停止 ($TIME$)",
@@ -92,6 +101,9 @@
     },
     "formatOff": {
         "message": "オフ"
+    },
+    "formatMuted": {
+        "message": "ミュート"
     },
     "tabRecords": {
         "message": "録画一覧"

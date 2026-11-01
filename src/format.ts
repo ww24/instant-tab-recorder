@@ -28,9 +28,10 @@ export function buildRecordingTitle(appName: string, state: RecordingState, now:
     const status = state.isPaused ? t('formatPaused', elapsed) : t('formatRecording', elapsed)
     const on = t('formatOn')
     const off = t('formatOff')
+    const muted = t('formatMuted')
     const video = state.recordingMode !== 'audio-only' ? on : off
     const audio = state.recordingMode !== 'video-only' ? on : off
-    const mic = state.micEnabled ? on : off
+    const mic = state.micEnabled ? (state.isMicMuted ? muted : on) : off
     const timerLine =
         state.stopAtMs != null
             ? state.isPaused

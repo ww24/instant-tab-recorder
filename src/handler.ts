@@ -114,6 +114,7 @@ export interface RecordingState {
     screenSize?: Resolution
     recordingMode?: VideoRecordingMode
     micEnabled?: boolean
+    isMicMuted?: boolean
     stopAtMs?: number
 }
 

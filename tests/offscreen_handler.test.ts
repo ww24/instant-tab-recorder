@@ -52,6 +52,9 @@ function createMockSession(overrides: Partial<OffscreenSession> = {}): Offscreen
         resume: vi.fn(),
         isPaused: false,
         elapsedPausedMs: 0,
+        muteMicrophone: vi.fn(),
+        unmuteMicrophone: vi.fn(),
+        isMicMuted: false,
         startPreview: vi.fn(),
         stopPreview: vi.fn(),
         updateCropRegion: vi.fn(),
@@ -799,6 +802,26 @@ describe('resume-recording', () => {
         const handler = new OffscreenHandler(deps)
         await handler.handleMessage({ type: 'resume-recording', trigger: 'keyboard-shortcut' })
         expect(deps.session.resume).toHaveBeenCalled()
+    })
+})
+
+// ---------- mute-microphone / unmute-microphone ----------
+
+describe('mute-microphone', () => {
+    it('calls session.muteMicrophone()', async () => {
+        const deps = createMockDeps()
+        const handler = new OffscreenHandler(deps)
+        await handler.handleMessage({ type: 'mute-microphone', trigger: 'keyboard-shortcut' })
+        expect(deps.session.muteMicrophone).toHaveBeenCalled()
+    })
+})
+
+describe('unmute-microphone', () => {
+    it('calls session.unmuteMicrophone()', async () => {
+        const deps = createMockDeps()
+        const handler = new OffscreenHandler(deps)
+        await handler.handleMessage({ type: 'unmute-microphone', trigger: 'context-menu' })
+        expect(deps.session.unmuteMicrophone).toHaveBeenCalled()
     })
 })
 

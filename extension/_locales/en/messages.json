@@ -31,6 +31,10 @@
         "message": "Toggle pause/resume recording",
         "description": "Keyboard shortcut description for toggle pause"
     },
+    "commandToggleMuteMicrophone": {
+        "message": "Toggle mute/unmute microphone",
+        "description": "Keyboard shortcut description for toggle mute microphone"
+    },
     "commandOpenOptionPage": {
         "message": "Open options page",
         "description": "Keyboard shortcut description for opening options page"
@@ -50,6 +54,14 @@
     "contextMenuResumeRecording": {
         "message": "Resume Recording",
         "description": "Context menu item to resume recording"
+    },
+    "contextMenuMuteMicrophone": {
+        "message": "Mute Microphone",
+        "description": "Context menu item to mute microphone"
+    },
+    "contextMenuUnmuteMicrophone": {
+        "message": "Unmute Microphone",
+        "description": "Context menu item to unmute microphone"
     },
     "formatPaused": {
         "message": "Paused ($TIME$)",
@@ -120,6 +132,10 @@
     "formatOff": {
         "message": "off",
         "description": "Status indicator for disabled feature"
+    },
+    "formatMuted": {
+        "message": "muted",
+        "description": "Status indicator for muted microphone"
     },
     "tabRecords": {
         "message": "Records",

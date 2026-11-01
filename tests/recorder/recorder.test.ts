@@ -29,6 +29,7 @@ function createMockTrack(kind: 'audio' | 'video', id = '1'): MediaStreamTrack {
     return {
         kind,
         id,
+        enabled: true,
         stop: vi.fn(),
         clone: vi.fn(() => createMockTrack(kind, `${id}-clone`)),
         addEventListener: vi.fn((event: string, listener: EventListener) => {
@@ -726,6 +727,98 @@ describe('RecordingSession', () => {
             session.resume()
 
             expect(session.elapsedPausedMs).toBe(5_000)
+        })
+    })
+
+    describe('microphone mute and unmute', () => {
+        test('mutes and unmutes microphone tracks while recording', async () => {
+            const config = createDefaultConfig()
+            await session.start(defaultRequest, config)
+            expect(session.isMicMuted).toBe(false)
+
+            const micStream = await (mediaCapture.captureMicrophone as Mock).mock.results[0].value
+            const micTrack = micStream.getAudioTracks()[0]
+            expect(micTrack.enabled).toBe(true)
+
+            session.muteMicrophone()
+            expect(session.isMicMuted).toBe(true)
+            expect(micTrack.enabled).toBe(false)
+
+            session.unmuteMicrophone()
+            expect(session.isMicMuted).toBe(false)
+            expect(micTrack.enabled).toBe(true)
+        })
+
+        test('mutes and unmutes separated mic track when audio separation is enabled', async () => {
+            const separatedMicTrack = createMockTrack('audio', 'separated-mic')
+            ;(audioSeparation.createOutputs as Mock).mockResolvedValue({
+                sources: [],
+                clonedTracks: [separatedMicTrack],
+                micTrack: separatedMicTrack,
+                errorPromises: [],
+            } satisfies AudioSeparationOutputs)
+
+            const config = createDefaultConfig({ audioSeparation: { enabled: true } })
+            await session.start(defaultRequest, config)
+
+            const micStream = await (mediaCapture.captureMicrophone as Mock).mock.results[0].value
+            const mainMicTrack = micStream.getAudioTracks()[0]
+
+            session.muteMicrophone()
+            expect(mainMicTrack.enabled).toBe(false)
+            expect(separatedMicTrack.enabled).toBe(false)
+
+            session.unmuteMicrophone()
+            expect(mainMicTrack.enabled).toBe(true)
+            expect(separatedMicTrack.enabled).toBe(true)
+        })
+
+        test('can mute and unmute microphone while paused', async () => {
+            const config = createDefaultConfig()
+            await session.start(defaultRequest, config)
+            session.pause()
+
+            session.muteMicrophone()
+            expect(session.isMicMuted).toBe(true)
+
+            session.unmuteMicrophone()
+            expect(session.isMicMuted).toBe(false)
+        })
+
+        test('does nothing when microphone is not enabled', async () => {
+            ;(mediaCapture.captureMicrophone as Mock).mockResolvedValue(null)
+            const config = createDefaultConfig({
+                microphone: {
+                    enabled: false,
+                    gain: 1.0,
+                    deviceId: null,
+                    noiseSuppression: true,
+                    echoCancellation: true,
+                    autoGainControl: false,
+                },
+            })
+            await session.start(defaultRequest, config)
+
+            session.muteMicrophone()
+            expect(session.isMicMuted).toBe(false)
+
+            session.unmuteMicrophone()
+            expect(session.isMicMuted).toBe(false)
+        })
+
+        test('throws when called in idle state', () => {
+            expect(() => session.muteMicrophone()).toThrow("Cannot mute microphone in state 'idle'")
+            expect(() => session.unmuteMicrophone()).toThrow("Cannot unmute microphone in state 'idle'")
+        })
+
+        test('resets isMicMuted on stop and cancel', async () => {
+            const config = createDefaultConfig()
+            await session.start(defaultRequest, config)
+            session.muteMicrophone()
+            expect(session.isMicMuted).toBe(true)
+
+            await session.cancel()
+            expect(session.isMicMuted).toBe(false)
         })
     })
 

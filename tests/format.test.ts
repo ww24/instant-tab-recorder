@@ -140,6 +140,18 @@ describe('buildRecordingTitle', () => {
         expect(title).toContain('mic: on')
     })
 
+    it('shows mic: muted when micEnabled is true and isMicMuted is true', () => {
+        const state: RecordingState = { ...baseState, micEnabled: true, isMicMuted: true }
+        const title = buildRecordingTitle(appName, state, 1000)
+        expect(title).toContain('mic: muted')
+    })
+
+    it('shows mic: off when micEnabled is false even if isMicMuted is true', () => {
+        const state: RecordingState = { ...baseState, micEnabled: false, isMicMuted: true }
+        const title = buildRecordingTitle(appName, state, 1000)
+        expect(title).toContain('mic: off')
+    })
+
     it('shows elapsed time based on startAtMs and now', () => {
         const state: RecordingState = { ...baseState, startAtMs: 0 }
         const title = buildRecordingTitle(appName, state, 90 * 60_000) // 90 minutes
