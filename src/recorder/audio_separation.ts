@@ -8,6 +8,8 @@ import type { SubFileInfo } from '../recording_db'
 export interface AudioSeparationOutputs {
     tabOutput?: Output
     micOutput?: Output
+    /** Cloned microphone audio track (if created) for mute/unmute control */
+    micTrack?: MediaStreamTrack
     /** All pausable sources across separation outputs */
     sources: PausableSource[]
     /** Cloned media tracks that must be stopped on cleanup */
@@ -86,6 +88,7 @@ export class AudioSeparationManager {
                     audioBitrate,
                 )
                 result.micOutput = handle.output
+                result.micTrack = micAudioTrack
                 result.sources.push(...handle.sources)
                 result.clonedTracks.push(micAudioTrack)
                 result.errorPromises.push(...handle.errorPromises)

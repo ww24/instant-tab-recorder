@@ -5,10 +5,7 @@ import type {
     Trigger,
     StartTrigger,
     StartRecordingMessage,
-    StartRecordingResponse,
     StopRecordingMessage,
-    PauseRecordingMessage,
-    ResumeRecordingMessage,
     SaveConfigLocalMessage,
     ExceptionMessage,
     RecordingStateMessage,
@@ -23,7 +20,16 @@ import { deepMerge } from './element/util'
 import { OPFSStorage } from './opfs_storage'
 import { handleApiRequest, RecordingState } from './handler'
 import { buildRecordingTitle } from './format'
-import { createMessageListener, type ServiceWorkerDeps } from './service_worker_handler'
+import {
+    createMessageListener,
+    createRecordingStateManager,
+    pauseRecordingSession,
+    resumeRecordingSession,
+    startRecordingSession,
+    toggleMicrophoneMute,
+    togglePauseRecordingSession,
+    type ServiceWorkerDeps,
+} from './service_worker_handler'
 import { t } from './i18n'
 import { RecordingDB } from './recording_db'
 
@@ -37,6 +43,7 @@ const APP_NAME = t('appName')
 const DEFAULT_TITLE = t('actionDefaultTitle')
 const CONTEXT_MENU_ID = 'start-recording'
 const CONTEXT_MENU_PAUSE_ID = 'pause-recording'
+const CONTEXT_MENU_MUTE_MIC_ID = 'mute-microphone'
 
 chrome.runtime.onInstalled.addListener(async details => {
     await createOffscreenDocument()
@@ -112,6 +119,14 @@ chrome.runtime.onInstalled.addListener(async details => {
         visible: false,
     })
 
+    // Create context menu for mute/unmute microphone (hidden by default)
+    chrome.contextMenus.create({
+        id: CONTEXT_MENU_MUTE_MIC_ID,
+        title: t('contextMenuMuteMicrophone'),
+        contexts: ['page'],
+        visible: false,
+    })
+
     if (details.reason === 'install') {
         await chrome.runtime.openOptionsPage()
     }
@@ -141,18 +156,23 @@ async function getIsRecording(): Promise<boolean> {
 
 // Persistent recording state
 const recordingStateKey = 'recordingState'
-async function getRecordingState(): Promise<RecordingState> {
-    const isRecording = await getIsRecording()
-    if (!isRecording) return { isRecording }
+const recordingStateManager = createRecordingStateManager(
+    async (): Promise<RecordingState> => {
+        const isRecording = await getIsRecording()
+        if (!isRecording) return { isRecording }
 
-    const recordingState = (await chrome.storage.local.get(recordingStateKey))[recordingStateKey]
-    if (!recordingState) return { isRecording }
+        const recordingState = (await chrome.storage.local.get(recordingStateKey))[recordingStateKey] as
+            | RecordingState
+            | undefined
+        if (!recordingState?.isRecording) return { isRecording: false }
 
-    return { ...recordingState, isRecording }
-}
-async function setRecordingState(state: RecordingState) {
-    await chrome.storage.local.set({ [recordingStateKey]: state })
-}
+        return { ...recordingState, isRecording }
+    },
+    async (state: RecordingState) => {
+        await chrome.storage.local.set({ [recordingStateKey]: state })
+    },
+)
+const { getRecordingState, setRecordingState, updateRecordingState } = recordingStateManager
 
 // Action icon handler
 chrome.action.onClicked.addListener(async (tab: chrome.tabs.Tab) => {
@@ -178,12 +198,11 @@ chrome.contextMenus.onClicked.addListener(async (info: chrome.contextMenus.OnCli
     const trigger = 'context-menu'
     try {
         if (info.menuItemId === CONTEXT_MENU_PAUSE_ID) {
-            const state = await getRecordingState()
-            if (state.isRecording && state.isPaused) {
-                await resumeRecording(trigger)
-            } else if (state.isRecording) {
-                await pauseRecording(trigger)
-            }
+            await togglePauseRecording(trigger)
+            return
+        }
+        if (info.menuItemId === CONTEXT_MENU_MUTE_MIC_ID) {
+            await toggleMuteMicrophone(trigger)
             return
         }
         if (info.menuItemId !== CONTEXT_MENU_ID || !tab) return
@@ -228,13 +247,11 @@ chrome.commands.onCommand.addListener(async (command: string, tab?: chrome.tabs.
                 break
             }
             case 'toggle-pause-recording': {
-                const state = await getRecordingState()
-                if (!state.isRecording) return
-                if (state.isPaused) {
-                    await resumeRecording(trigger)
-                } else {
-                    await pauseRecording(trigger)
-                }
+                await togglePauseRecording(trigger)
+                break
+            }
+            case 'toggle-mute-microphone': {
+                await toggleMuteMicrophone(trigger)
                 break
             }
             case 'open-option-page': {
@@ -272,23 +289,13 @@ async function startRecording(tab: chrome.tabs.Tab, trigger: StartTrigger) {
             streamId,
         },
     }
-    const response: StartRecordingResponse | undefined = await chrome.runtime.sendMessage(msg)
-    if (response == null) {
-        throw new Error('unexpected start recording response')
-    }
-
-    // Set recording state from offscreen response
-    await setRecordingState({
-        isRecording: true,
+    await startRecordingSession(
+        msg,
         screenSize,
-        startAtMs: response.startAtMs,
-        recordingMode: response.recordingMode,
-        micEnabled: response.micEnabled,
-        stopAtMs: response.stopAtMs,
-    })
-
-    await updateRecordingIndications()
-    await broadcastRecordingState()
+        recordingStateManager,
+        m => chrome.runtime.sendMessage(m),
+        notifyRecordingStateUpdated,
+    )
 }
 
 async function stopRecording(trigger: Trigger, skipConfirmation = false) {
@@ -315,6 +322,7 @@ async function stopRecording(trigger: Trigger, skipConfirmation = false) {
         trigger,
     }
     await chrome.runtime.sendMessage(msg)
+    await setRecordingState({ isRecording: false })
 
     await broadcastRecordingState()
     await updateRecordingIndications()
@@ -332,6 +340,7 @@ async function cancelRecording(error: string) {
     // Send cancel-recording message to offscreen document
     const msg: CancelRecordingMessage = { type: 'cancel-recording' }
     await chrome.runtime.sendMessage(msg)
+    await setRecordingState({ isRecording: false })
 
     // Persist error BEFORE broadcasting state so that the option page
     // (if already open) can read it when handling the recording-state message.
@@ -351,26 +360,45 @@ async function cancelRecording(error: string) {
     await chrome.runtime.openOptionsPage()
 }
 
-async function pauseRecording(trigger: Trigger) {
-    const msg: PauseRecordingMessage = { type: 'pause-recording', trigger }
-    await chrome.runtime.sendMessage(msg)
-
-    const state = await getRecordingState()
-    await setRecordingState({ ...state, isPaused: true, pausedAtMs: Date.now() })
+async function notifyRecordingStateUpdated() {
     await updateRecordingIndications()
     await broadcastRecordingState()
 }
 
-async function resumeRecording(trigger: Trigger) {
-    const msg: ResumeRecordingMessage = { type: 'resume-recording', trigger }
-    await chrome.runtime.sendMessage(msg)
+async function pauseRecording(trigger: Trigger) {
+    await pauseRecordingSession(
+        trigger,
+        recordingStateManager,
+        msg => chrome.runtime.sendMessage(msg),
+        notifyRecordingStateUpdated,
+    )
+}
 
-    const state = await getRecordingState()
-    const pausedDuration = state.pausedAtMs != null ? Date.now() - state.pausedAtMs : 0
-    const totalPausedMs = (state.totalPausedMs ?? 0) + pausedDuration
-    await setRecordingState({ ...state, isPaused: false, pausedAtMs: undefined, totalPausedMs })
-    await updateRecordingIndications()
-    await broadcastRecordingState()
+async function resumeRecording(trigger: Trigger) {
+    await resumeRecordingSession(
+        trigger,
+        recordingStateManager,
+        msg => chrome.runtime.sendMessage(msg),
+        notifyRecordingStateUpdated,
+    )
+}
+
+async function togglePauseRecording(trigger: Trigger) {
+    await togglePauseRecordingSession(
+        trigger,
+        recordingStateManager,
+        msg => chrome.runtime.sendMessage(msg),
+        notifyRecordingStateUpdated,
+    )
+}
+
+async function toggleMuteMicrophone(trigger: Trigger) {
+    await toggleMicrophoneMute(
+        trigger,
+        recordingStateManager,
+        msg => chrome.runtime.sendMessage(msg),
+        notifyRecordingStateUpdated,
+    )
 }
 
 async function updateRecordingIndications() {
@@ -424,6 +452,10 @@ async function updateContextMenuTitle(state: RecordingState) {
         title: state.isPaused ? t('contextMenuResumeRecording') : t('contextMenuPauseRecording'),
         visible: state.isRecording,
     })
+    await chrome.contextMenus.update(CONTEXT_MENU_MUTE_MIC_ID, {
+        title: state.isMicMuted ? t('contextMenuUnmuteMicrophone') : t('contextMenuMuteMicrophone'),
+        visible: Boolean(state.isRecording && state.micEnabled),
+    })
 }
 
 // Update badge to indicate paused state
@@ -433,7 +465,7 @@ async function updateBadge(state: RecordingState) {
 
 // Broadcast recording state to all option pages
 async function broadcastRecordingState() {
-    const { isRecording, isPaused, totalPausedMs, pausedAtMs, screenSize, startAtMs, stopAtMs } =
+    const { isRecording, isPaused, isMicMuted, totalPausedMs, pausedAtMs, screenSize, startAtMs, stopAtMs } =
         await getRecordingState()
     // When paused, include current pause duration in totalPausedMs
     const effectivePausedMs = (totalPausedMs ?? 0) + (isPaused && pausedAtMs != null ? Date.now() - pausedAtMs : 0)
@@ -442,6 +474,7 @@ async function broadcastRecordingState() {
         data: {
             isRecording,
             isPaused,
+            isMicMuted,
             totalPausedMs: effectivePausedMs,
             screenSize,
             startAtMs,
@@ -458,6 +491,7 @@ async function broadcastRecordingState() {
 const messageHandlerDeps: ServiceWorkerDeps = {
     getRecordingState,
     setRecordingState,
+    updateRecordingState,
     getConfiguration,
     getRemoteConfiguration,
     stopRecording,

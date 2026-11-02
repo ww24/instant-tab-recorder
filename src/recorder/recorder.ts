@@ -47,6 +47,8 @@ export class RecordingSession implements OffscreenSession {
     private separationOutputs?: AudioSeparationOutputs
     private allSources: PausableSource[] = []
     private mediaTracks: MediaStreamTrack[] = []
+    private micTracks: MediaStreamTrack[] = []
+    private micMuted = false
     private recordingStartTime = 0
     private totalPausedMs = 0
     private pausedAtMs = 0
@@ -140,6 +142,7 @@ export class RecordingSession implements OffscreenSession {
 
             // Collect all media tracks for cleanup
             this.mediaTracks = [...tabMedia.getTracks(), ...(micStream?.getTracks() ?? [])]
+            this.micTracks = [...(micStream?.getAudioTracks() ?? [])]
 
             // Audio separation
             if (audioSeparation.enabled) {
@@ -150,6 +153,9 @@ export class RecordingSession implements OffscreenSession {
                     videoFormat,
                 )
                 this.mediaTracks.push(...this.separationOutputs.clonedTracks)
+                if (this.separationOutputs.micTrack) {
+                    this.micTracks.push(this.separationOutputs.micTrack)
+                }
                 this.allSources.push(...this.separationOutputs.sources)
                 errorPromises.push(...this.separationOutputs.errorPromises)
             }
@@ -311,6 +317,32 @@ export class RecordingSession implements OffscreenSession {
         return this.totalPausedMs
     }
 
+    muteMicrophone(): void {
+        if (this.currentState !== 'recording' && this.currentState !== 'paused') {
+            throw new Error(`Cannot mute microphone in state '${this.currentState}'`)
+        }
+        if (this.micTracks.length === 0) return
+        for (const track of this.micTracks) {
+            track.enabled = false
+        }
+        this.micMuted = true
+    }
+
+    unmuteMicrophone(): void {
+        if (this.currentState !== 'recording' && this.currentState !== 'paused') {
+            throw new Error(`Cannot unmute microphone in state '${this.currentState}'`)
+        }
+        if (this.micTracks.length === 0) return
+        for (const track of this.micTracks) {
+            track.enabled = true
+        }
+        this.micMuted = false
+    }
+
+    get isMicMuted(): boolean {
+        return this.micMuted
+    }
+
     startPreview(): void {
         if (this.currentVideoTrack != null) {
             this.preview.start(this.currentVideoTrack)
@@ -339,6 +371,8 @@ export class RecordingSession implements OffscreenSession {
         this.recordingFileHandle = undefined
         this.mediaTracks.forEach(t => t.stop())
         this.mediaTracks = []
+        this.micTracks = []
+        this.micMuted = false
         this.currentVideoTrack = null
         this.currentState = 'idle'
     }

@@ -44,6 +44,9 @@
         "toggle-pause-recording": {
             "description": "__MSG_commandTogglePauseRecording__"
         },
+        "toggle-mute-microphone": {
+            "description": "__MSG_commandToggleMuteMicrophone__"
+        },
         "open-option-page": {
             "description": "__MSG_commandOpenOptionPage__"
         }

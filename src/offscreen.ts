@@ -1,6 +1,7 @@
 import { Settings } from './element/settings'
 import type {
     Message,
+    MuteMicrophoneResponse,
     StartRecordingResponse,
     TabTrackEndedMessage,
     PreviewFrameMessage,
@@ -142,7 +143,7 @@ chrome.runtime.onMessage.addListener(
     (
         message: Message,
         _sender: chrome.runtime.MessageSender,
-        sendResponse: (response?: StartRecordingResponse) => void,
+        sendResponse: (response?: StartRecordingResponse | MuteMicrophoneResponse) => void,
     ) => {
         const resultPromise = handler.handleMessage(message)
         if (resultPromise == null) return

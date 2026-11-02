@@ -2,12 +2,16 @@ import type { Configuration, RecordingInfo, Resolution, CropRegion } from './con
 import type {
     Message,
     ModelType,
+    MuteMicrophoneMessage,
+    MuteMicrophoneResponse,
     StartRecording,
+    StartRecordingMessage,
     StartRecordingResponse,
     StartTrigger,
     Trigger,
     TimerExpiredMessage,
     TimerUpdatedMessage,
+    UnmuteMicrophoneMessage,
 } from './message'
 import type { RecordingConfig, RecordingResult } from './recorder'
 import type { Event, ExceptionMetadata } from './sentry_event'
@@ -28,6 +32,9 @@ export interface OffscreenSession {
     resume(): void
     readonly isPaused: boolean
     readonly elapsedPausedMs: number
+    muteMicrophone(): void
+    unmuteMicrophone(): void
+    readonly isMicMuted: boolean
     startPreview(): void
     stopPreview(): void
     updateCropRegion(region: CropRegion): void
@@ -84,7 +91,10 @@ export class OffscreenHandler {
         }
     }
 
-    handleMessage(message: Message): Promise<StartRecordingResponse | void> | null {
+    handleMessage(message: StartRecordingMessage): Promise<StartRecordingResponse>
+    handleMessage(message: MuteMicrophoneMessage | UnmuteMicrophoneMessage): Promise<MuteMicrophoneResponse>
+    handleMessage(message: Message): Promise<StartRecordingResponse | MuteMicrophoneResponse | void> | null
+    handleMessage(message: Message): Promise<StartRecordingResponse | MuteMicrophoneResponse | void> | null {
         switch (message.type) {
             case 'start-recording':
                 return this.handleStartRecording(message.data, message.trigger)
@@ -94,6 +104,10 @@ export class OffscreenHandler {
                 return this.handlePauseRecording()
             case 'resume-recording':
                 return this.handleResumeRecording()
+            case 'mute-microphone':
+                return this.handleMuteMicrophone()
+            case 'unmute-microphone':
+                return this.handleUnmuteMicrophone()
             case 'cancel-recording':
                 return this.handleCancelRecording()
             case 'save-config-local':
@@ -296,6 +310,16 @@ export class OffscreenHandler {
     private async handleResumeRecording(): Promise<void> {
         this.deps.session.resume()
         await this.resumeRecordingTimer()
+    }
+
+    private async handleMuteMicrophone(): Promise<MuteMicrophoneResponse> {
+        this.deps.session.muteMicrophone()
+        return { isMicMuted: this.deps.session.isMicMuted }
+    }
+
+    private async handleUnmuteMicrophone(): Promise<MuteMicrophoneResponse> {
+        this.deps.session.unmuteMicrophone()
+        return { isMicMuted: this.deps.session.isMicMuted }
     }
 
     private async handleSaveConfigLocal(data: Configuration): Promise<void> {
