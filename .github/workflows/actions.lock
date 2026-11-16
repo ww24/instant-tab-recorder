@@ -14,7 +14,7 @@ workflows:
         - 'actions/cache@v6.1.0'
         - 'actions/checkout@v7.0.1'
         - 'actions/setup-node@v7.1.0'
-        - 'getsentry/action-release@v3.7.2'
+        - 'getsentry/action-release@v3.8.0'
     '.github/workflows/test.yaml':
         - 'actions/cache@v6.1.0'
         - 'actions/checkout@v7.0.1'
@@ -73,9 +73,9 @@ dependencies:
         repo_id: 496012378
         uses:
             - 'actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f'
-    'getsentry/action-release@v3.7.2':
-        ref: 'v3.7.2'
-        commit: 'sha1-e6703d0b00208e0b3687ba660d18ab5af7892821'
+    'getsentry/action-release@v3.8.0':
+        ref: 'v3.8.0'
+        commit: 'sha1-d55c8c3b7375607e972b710f12926b676d89d7d2'
         owner_id: 1396951
         repo_id: 273043452
         uses:
